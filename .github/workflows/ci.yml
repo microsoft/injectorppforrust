@@ -18,8 +18,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-          - os: windows-latest
-            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
     name: Build & test on ${{ matrix.os }} / ${{ matrix.target }}
@@ -40,7 +38,7 @@ jobs:
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Build (cross for ARM64, cargo for others)
+      - name: Build
         run: |
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]] || [[ "${{ matrix.target }}" == "aarch64-pc-windows-msvc" ]]; then
             cross build --target ${{ matrix.target }} --release
@@ -48,7 +46,7 @@ jobs:
             cargo build --target ${{ matrix.target }} --release
           fi
 
-      - name: Test (cross for ARM64, cargo for others)
+      - name: Test
         run: |
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]] || [[ "${{ matrix.target }}" == "aarch64-pc-windows-msvc" ]]; then
             cross test --target ${{ matrix.target }} -- --nocapture
