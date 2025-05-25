@@ -47,7 +47,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]] || [[ "${{ matrix.target }}" == "aarch64-pc-windows-msvc" ]]; then
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             cross build --target ${{ matrix.target }} --release
           else
             cargo build --target ${{ matrix.target }} --release
@@ -56,7 +56,7 @@ jobs:
       - name: Test
         shell: bash
         run: |
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]] || [[ "${{ matrix.target }}" == "aarch64-pc-windows-msvc" ]]; then
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             cross test --target ${{ matrix.target }} -- --nocapture
           else
             cargo test --target ${{ matrix.target }} -- --nocapture
