@@ -79,7 +79,7 @@ fn generate_will_return_boolean_jit_code(jit_ptr: *mut u8, value: bool) {
     ];
 
     // Replace the value accordingly
-    if value == true {
+    if value {
         asm_code[3] = 1u8;
     }
 
