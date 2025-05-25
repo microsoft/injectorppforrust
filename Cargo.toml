@@ -1,0 +1,11 @@
+[package]
+name = "injectorpp"
+version = "0.3.2"
+edition = "2021"
+description = "Injectorpp is a powerful tool designed to facilitate the writing of unit tests without the need to introduce traits solely for testing purposes. It streamlines the testing process by providing a seamless and efficient way to abstract dependencies, ensuring that your code remains clean and maintainable."
+
+[dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"], default-features = false }
