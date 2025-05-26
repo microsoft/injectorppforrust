@@ -60,8 +60,7 @@ jobs:
           cargo llvm-cov --workspace \
             --lcov \
             --target ${{ matrix.target }} \
-            --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov \
-            --fail-under-line 0
+            --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
 
       # --- Upload the per-target .lcov tracefile ---
       - name: Upload tracefile
