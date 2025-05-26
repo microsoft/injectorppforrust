@@ -65,7 +65,7 @@ jobs:
 
       # --- Upload the per-target .lcov tracefile ---
       - name: Upload tracefile
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
           path: target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
