@@ -115,6 +115,11 @@ jobs:
             done
           fi
 
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
       - name: Generate HTML report
         run: genhtml merged.lcov --output-directory coverage-report
 
