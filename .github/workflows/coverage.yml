@@ -24,22 +24,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # --- LINUX ONLY: Dependencies for coverage and QEMU emulation ---
+      # Linux deps + QEMU for ARM64
       - name: Install Linux packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y llvm lcov qemu-user-static
-      - name: Install cross (for ARM emulation)
+
+      - name: Install cross
         if: runner.os == 'Linux'
         run: cargo install cross --locked
 
-      # --- WINDOWS ONLY: Install LLVM for coverage ---
+      # Windows LLVM
       - name: Install LLVM on Windows
         if: runner.os == 'Windows'
         run: choco install llvm --no-progress
 
-      # --- Common: Rust toolchain + llvm-cov ---
+      # Nightly + llvm-cov
       - name: Install Rust nightly
         uses: actions-rs/toolchain@v1
         with:
@@ -49,20 +50,17 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
 
-      # --- Run coverage for this matrix entry ---
+      # Run coverage (no backslashes, one logical command)
       - name: Run coverage
         env:
           RUSTFLAGS: "-C instrument-coverage"
           CARGO_INCREMENTAL: "0"
-          # point aarch64 tests at the QEMU emulator
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64-static
-        run: |
-          cargo llvm-cov --workspace \
-            --lcov \
-            --target ${{ matrix.target }} \
-            --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+        run: >
+          cargo llvm-cov --workspace --lcov
+          --target ${{ matrix.target }}
+          --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
 
-      # --- Upload the per-target .lcov tracefile ---
       - name: Upload tracefile
         uses: actions/upload-artifact@v4
         with:
@@ -85,9 +83,7 @@ jobs:
 
       - name: Merge LCOV tracefiles
         run: |
-          # start with an empty baseline
           lcov --quiet --directory . --capture --initial --output-file merged.lcov
-          # add each matrix tracefile
           for f in traces/*.lcov; do
             lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum
           done
