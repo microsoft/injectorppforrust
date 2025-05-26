@@ -29,7 +29,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm lcov qemu-user-static
+          sudo apt-get install -y llvm lcov qemu-user-static gcc-aarch64-linux-gnu
+
+      - name: Verify QEMU installation
+        if: runner.os == 'Linux'
+        run: |
+          qemu-aarch64-static --version
+          echo "QEMU for ARM64 is properly configured."
 
       - name: Install cross
         if: runner.os == 'Linux'
@@ -59,11 +65,16 @@ jobs:
         env:
           RUSTFLAGS: "-C instrument-coverage"
           CARGO_INCREMENTAL: "0"
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64-static
-        run: >
-          cargo llvm-cov --workspace --lcov
-          --target ${{ matrix.target }}
-          --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+        run: |
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cross llvm-cov --workspace --lcov \
+              --target ${{ matrix.target }} \
+              --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+          else
+            cargo llvm-cov --workspace --lcov \
+              --target ${{ matrix.target }} \
+              --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+          fi
 
       - name: Upload tracefile
         uses: actions/upload-artifact@v4
