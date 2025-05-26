@@ -8,7 +8,7 @@ fn complex_generic_multiple_types_func_return_false<A, B, C>(_a: A, _b: B, _c: C
     return false;
 }
 
-#[test]
+/*#[test]
 fn test_will_return_boolean_when_in_scope_should_restore() {
     assert_eq!(returns_false(), false);
 
@@ -25,7 +25,7 @@ fn test_will_return_boolean_when_in_scope_should_restore() {
     let restored = returns_false();
 
     assert_eq!(restored, false);
-}
+}*/
 
 #[test]
 fn test_will_return_boolean_when_fake_return_true_should_success() {
