@@ -105,8 +105,7 @@ jobs:
 
       - name: Merge LCOV tracefiles
         run: |
-          lcov_files=(traces/*.lcov)
-          rm -rf merged.lcov
+          lcov_files=($(find traces -type f -name '*.lcov'))
           if [ ${#lcov_files[@]} -eq 1 ]; then
             cp "${lcov_files[0]}" merged.lcov
           else
