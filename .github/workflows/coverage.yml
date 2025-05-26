@@ -51,7 +51,7 @@ jobs:
         run: |
           case "${{ matrix.tool }}" in
             tarpaulin)
-              # on Linux (x86_64 & ARM64):
+              # on Linux:
               # 1) generate lcov in working dir
               cargo tarpaulin \
                 --target ${{ matrix.target }} \
@@ -60,7 +60,7 @@ jobs:
                 --timeout 120
 
               # 2) tarpaulin names it tarpaulin.lcov by default—rename it:
-              mv tarpaulin.lcov coverage-${{ matrix.target }}.info
+              mv lcov.info coverage-${{ matrix.target }}.info
               ;;
             llvm-cov)
               # on Windows MSVC
