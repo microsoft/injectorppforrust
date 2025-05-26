@@ -3,30 +3,97 @@ name: Code Coverage
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  coverage:
-    runs-on: ubuntu-latest
-    name: Generate Coverage Report
+  coverage-matrix:
+    name: Coverage on ${{ matrix.os }} / ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          #- os: ubuntu-latest
+          #  target: aarch64-unknown-linux-gnu
+          #- os: windows-latest
+          #  target: x86_64-pc-windows-msvc
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Install Rust
+      # Linux deps + QEMU for ARM64
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm lcov qemu-user-static gcc-aarch64-linux-gnu binfmt-support
+
+      - name: Enable QEMU binfmt
+        if: runner.os == 'Linux'
+        run: sudo update-binfmts --enable qemu-aarch64
+
+      - name: Verify QEMU installation
+        if: runner.os == 'Linux'
+        run: |
+          qemu-aarch64-static --version
+          echo "QEMU for ARM64 is properly configured."
+
+      - name: Install cross
+        if: runner.os == 'Linux'
+        run: cargo install cross --locked
+
+      # Windows LLVM
+      - name: Install LLVM on Windows
+        if: runner.os == 'Windows'
+        run: choco install llvm --no-progress
+
+      # Nightly + llvm-cov
+      - name: Install Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: nightly
           override: true
 
-      - name: Install Tarpaulin
-        run: cargo install cargo-tarpaulin
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
 
-      - name: Run Coverage (HTML + Summary)
+      # Install the standard library for the chosen target
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      # Run coverage in one logical command (no backslashes)
+      - name: Run coverage
+        env:
+          RUSTFLAGS: "-C instrument-coverage"
+          CARGO_INCREMENTAL: "0"
         run: |
-          cargo tarpaulin --out Html --out Stdout --timeout 120
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            cross llvm-cov --workspace --lcov \
+              --target ${{ matrix.target }} \
+              --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+          else
+            cargo llvm-cov --workspace --lcov \
+              --target ${{ matrix.target }} \
+              --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+          fi
 
-      - name: Upload HTML Report
+      - name: Upload LCOV tracefile
         uses: actions/upload-artifact@v4
         with:
-          name: html-code-coverage
-          path: tarpaulin-report.html
+          name: lcov-${{ matrix.os }}-${{ matrix.target }}
+          path: target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+
+      - name: Generate HTML report
+        if: runner.os == 'Linux'
+        run: |
+          genhtml target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov \
+            --output-directory coverage-report-${{ matrix.os }}-${{ matrix.target }}
+
+      - name: Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-${{ matrix.os }}-${{ matrix.target }}
+          path: coverage-report-${{ matrix.os }}-${{ matrix.target }}
