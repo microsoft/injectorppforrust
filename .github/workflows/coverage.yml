@@ -24,10 +24,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Install the standard library for the chosen target
-      - name: Add Rust target
-        run: rustup target add ${{ matrix.target }}
-
       # Linux deps + QEMU for ARM64
       - name: Install Linux packages
         if: runner.os == 'Linux'
@@ -53,6 +49,10 @@ jobs:
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
+
+      # Install the standard library for the chosen target
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
 
       # Run coverage in one logical command (no backslashes)
       - name: Run coverage
