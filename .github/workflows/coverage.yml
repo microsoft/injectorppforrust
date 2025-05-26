@@ -1,0 +1,32 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    name: Generate Coverage Report
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Run Coverage (HTML + Summary)
+        run: |
+          cargo tarpaulin --out Html --out Stdout --timeout 120
+
+      - name: Upload HTML Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: html-code-coverage
+          path: tarpaulin-report.html
