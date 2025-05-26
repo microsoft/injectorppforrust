@@ -1,4 +1,4 @@
-name: Diff Coverage Check
+name: Diff Code Coverage Check
 
 on:
   pull_request:
