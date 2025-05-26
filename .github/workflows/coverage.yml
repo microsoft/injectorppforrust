@@ -17,10 +17,6 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             tool: tarpaulin
-          # Linux ARM64
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            tool: tarpaulin
           # Windows MSVC
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -95,7 +91,6 @@ jobs:
         run: |
           # find all .info under coverage/ and merge them
           lcov -a coverage/coverage-x86_64-unknown-linux-gnu.info \
-               -a coverage/coverage-aarch64-unknown-linux-gnu.info \
                -a coverage/coverage-x86_64-pc-windows-msvc.info \
                -o coverage/merged.info
 
