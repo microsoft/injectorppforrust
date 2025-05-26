@@ -1,33 +1,30 @@
-name: Diff Code Coverage Check
+name: PR Diff Coverage
 
 on:
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   diff-coverage:
     runs-on: ubuntu-latest
-    name: Diff Coverage
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Required for git diff to work
+      - uses: actions/checkout@v3
 
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
+      - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
 
-      - name: Install coverage tools
-        run: |
-          cargo install cargo-llvm-cov
-          cargo install cargo-diff-coverage
+      - name: Run Tarpaulin → JSON
+        uses: actions-rs/tarpaulin@v0.1
+        with:
+          version: '0.23.0'
+          out-type: Json
+          args: "--output-file coverage/coverage-summary.json -- --test-threads 1"
 
-      - name: Generate coverage data
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
-
-      - name: Check diff coverage
-        run: cargo diff-coverage --lcov-file lcov.info --base-commit origin/main --threshold 100
+      - name: Coverage Diff Report
+        uses: greatwizard/coverage-diff-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          coverage-filename: coverage/coverage-summary.json
+          allowed-to-fail: false
