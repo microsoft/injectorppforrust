@@ -1,0 +1,36 @@
+# .github/workflows/coverage-diff.yml
+name: PR Diff Coverage
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  diff-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Tarpaulin
+        run: cargo install cargo-tarpaulin --version 0.23.0 --force
+
+      - name: Run Tarpaulin → JSON summary
+        run: |
+            mkdir -p coverage
+            cargo tarpaulin \
+            --out Json \
+            --output-dir coverage \
+            -- --test-threads=1
+
+      - name: Archive coverage JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: coverage/coverage-summary.json

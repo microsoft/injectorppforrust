@@ -1,8 +1,6 @@
 name: Code Coverage
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
     branches: [ main ]
 
