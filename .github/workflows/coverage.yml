@@ -100,11 +100,14 @@ jobs:
       - name: Install lcov & genhtml
         run: sudo apt-get update && sudo apt-get install -y lcov
 
+      - name: List lcov files
+        run: ls -lh traces/*.lcov || echo "No lcov files found"
+
       - name: Merge LCOV tracefiles
         run: |
-          lcov --quiet --directory . --capture --initial --output-file merged.lcov
+          cp traces/*.lcov merged.lcov
           for f in traces/*.lcov; do
-            lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum
+            lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum --ignore-errors empty
           done
 
       - name: Generate HTML report
