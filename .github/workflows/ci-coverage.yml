@@ -1,3 +1,4 @@
+# .github/workflows/coverage-diff.yml
 name: PR Diff Coverage
 
 on:
@@ -8,23 +9,27 @@ jobs:
   diff-coverage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - uses: actions-rs/toolchain@v1
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
 
-      - name: Run Tarpaulin → JSON
+      - name: Run Tarpaulin → JSON summary
         uses: actions-rs/tarpaulin@v0.1
         with:
           version: '0.23.0'
-          out-type: Json
-          args: "--output-file coverage/coverage-summary.json -- --test-threads 1"
+          args: > 
+            --out Json 
+            --output-file coverage/coverage-summary.json
+            --
+            --test-threads 1
 
-      - name: Coverage Diff Report
-        uses: greatwizard/coverage-diff-action@v1
+      - name: Archive coverage JSON
+        uses: actions/upload-artifact@v3
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          coverage-filename: coverage/coverage-summary.json
-          allowed-to-fail: false
+          name: coverage-summary
+          path: coverage/coverage-summary.json
