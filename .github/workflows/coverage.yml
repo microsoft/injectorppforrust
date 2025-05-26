@@ -80,51 +80,20 @@ jobs:
               --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
           fi
 
-      - name: Upload tracefile
+      - name: Upload LCOV tracefile
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+          name: lcov-${{ matrix.os }}-${{ matrix.target }}
           path: target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
 
-  merge-and-report:
-    name: Merge coverage & publish HTML
-    needs: coverage-matrix
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - name: Download all coverage tracefiles
-        uses: actions/download-artifact@v4
-        with:
-          path: traces
-
-      - name: Install lcov & genhtml
-        run: sudo apt-get update && sudo apt-get install -y lcov
-
-      - name: List lcov files
-        run: find traces -type f -name "*.lcov" -ls || echo "No lcov files found"
-
-      - name: Merge LCOV tracefiles
-        run: |
-          lcov_files=($(find traces -type f -name '*.lcov'))
-          if [ ${#lcov_files[@]} -eq 1 ]; then
-            cp "${lcov_files[0]}" merged.lcov
-          else
-            lcov --quiet --add-tracefile "${lcov_files[0]}" --output-file merged.lcov --no-checksum --ignore-errors empty
-            for f in "${lcov_files[@]:1}"; do
-              lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum --ignore-errors empty
-            done
-          fi
-
       - name: Generate HTML report
-        run: genhtml merged.lcov --output-directory coverage-report
+        if: runner.os == 'Linux'
+        run: |
+          genhtml target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov \
+            --output-directory coverage-report-${{ matrix.os }}-${{ matrix.target }}
 
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report
-          path: coverage-report
+          name: html-report-${{ matrix.os }}-${{ matrix.target }}
+          path: coverage-report-${{ matrix.os }}-${{ matrix.target }}
