@@ -105,9 +105,10 @@ jobs:
 
       - name: Merge LCOV tracefiles
         run: |
-          cp traces/*.lcov merged.lcov
           for f in traces/*.lcov; do
-            lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum --ignore-errors empty
+            if [ -f "$f" ]; then
+              lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum --ignore-errors empty
+            fi
           done
 
       - name: Generate HTML report
