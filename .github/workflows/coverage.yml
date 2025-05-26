@@ -24,6 +24,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Install the standard library for the chosen target
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
       # Linux deps + QEMU for ARM64
       - name: Install Linux packages
         if: runner.os == 'Linux'
@@ -50,7 +54,7 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
 
-      # Run coverage (no backslashes, one logical command)
+      # Run coverage in one logical command (no backslashes)
       - name: Run coverage
         env:
           RUSTFLAGS: "-C instrument-coverage"
@@ -74,7 +78,7 @@ jobs:
 
     steps:
       - name: Download all coverage tracefiles
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: traces
 
@@ -92,7 +96,7 @@ jobs:
         run: genhtml merged.lcov --output-directory coverage-report
 
       - name: Upload HTML coverage report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage-report
