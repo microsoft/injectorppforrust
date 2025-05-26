@@ -105,11 +105,17 @@ jobs:
 
       - name: Merge LCOV tracefiles
         run: |
-          for f in traces/*.lcov; do
-            if [ -f "$f" ]; then
+          lcov_files=(traces/*.lcov)
+          if [ ${#lcov_files[@]} -eq 1 ]; then
+            # Only one file, just copy
+            cp "${lcov_files[0]}" merged.lcov
+          else
+            # Merge all files
+            lcov --quiet --add-tracefile "${lcov_files[0]}" --output-file merged.lcov --no-checksum --ignore-errors empty
+            for f in "${lcov_files[@]:1}"; do
               lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum --ignore-errors empty
-            fi
-          done
+            done
+          fi
 
       - name: Generate HTML report
         run: genhtml merged.lcov --output-directory coverage-report
