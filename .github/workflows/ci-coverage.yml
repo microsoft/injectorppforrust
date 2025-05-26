@@ -18,15 +18,16 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Install Tarpaulin
+        run: cargo install cargo-tarpaulin --version 0.23.0 --force
+
       - name: Run Tarpaulin → JSON summary
-        uses: actions-rs/tarpaulin@v0.1
-        with:
-          version: '0.23.0'
-          args: > 
-            --out Json 
-            --output-file coverage/coverage-summary.json
-            --
-            --test-threads 1
+        run: |
+            mkdir -p coverage
+            cargo tarpaulin \
+            --out Json \
+            --output coverage/coverage-summary.json \
+            -- --test-threads=1
 
       - name: Archive coverage JSON
         uses: actions/upload-artifact@v4
