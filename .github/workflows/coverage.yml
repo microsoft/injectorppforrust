@@ -7,101 +7,97 @@ on:
     branches: [ main ]
 
 jobs:
-  coverage:
+  coverage-matrix:
+    name: Coverage on ${{ matrix.os }} / ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         include:
-          # Linux x86_64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            tool: tarpaulin
-          # Windows MSVC
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            tool: llvm-cov
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      # Linux: Install tarpaulin (for LCOV); Windows: Install cargo‑llvm‑cov
-      - name: Install coverage tool
-        if: matrix.tool == 'tarpaulin'
-        run: cargo install cargo-tarpaulin
-      - name: Install coverage tool
-        if: matrix.tool == 'llvm-cov'
-        run: cargo install cargo-llvm-cov
-
-      - name: Add Rust target
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Run coverage and produce LCOV
-        shell: bash
-        run: |
-          case "${{ matrix.tool }}" in
-            tarpaulin)
-              # on Linux:
-              # 1) generate lcov in working dir
-              cargo tarpaulin \
-                --target ${{ matrix.target }} \
-                --out Lcov \
-                --output-dir . \
-                --timeout 120
-
-              # 2) tarpaulin names it tarpaulin.lcov by default—rename it:
-              mv lcov.info coverage-${{ matrix.target }}.info
-              ;;
-            llvm-cov)
-              # on Windows MSVC
-              cargo llvm-cov \
-                --lcov \
-                --output-path coverage-${{ matrix.target }}.info
-              ;;
-          esac
-
-      - name: Upload LCOV artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lcov-${{ matrix.target }}
-          path: coverage-${{ matrix.target }}.info
-
-  merge-and-report:
-    name: Merge & HTML Report
-    runs-on: ubuntu-latest
-    needs: coverage
-    steps:
-      - name: Download all LCOV files
-        uses: actions/download-artifact@v4
-        with:
-          path: coverage/
-
-      - name: Install lcov & genhtml
+      # --- LINUX ONLY: Dependencies for coverage and QEMU emulation ---
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y lcov
+          sudo apt-get install -y llvm lcov qemu-user-static
+      - name: Install cross (for ARM emulation)
+        if: runner.os == 'Linux'
+        run: cargo install cross --locked
 
-      - name: Merge LCOV files
+      # --- WINDOWS ONLY: Install LLVM for coverage ---
+      - name: Install LLVM on Windows
+        if: runner.os == 'Windows'
+        run: choco install llvm --no-progress
+
+      # --- Common: Rust toolchain + llvm-cov ---
+      - name: Install Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      # --- Run coverage for this matrix entry ---
+      - name: Run coverage
+        env:
+          RUSTFLAGS: "-C instrument-coverage"
+          CARGO_INCREMENTAL: "0"
+          # point aarch64 tests at the QEMU emulator
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64-static
         run: |
-          # find all .info under coverage/ and merge them
-          lcov -a coverage/coverage-x86_64-unknown-linux-gnu.info \
-               -a coverage/coverage-x86_64-pc-windows-msvc.info \
-               -o coverage/merged.info
+          cargo llvm-cov --workspace \
+            --lcov \
+            --target ${{ matrix.target }} \
+            --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov \
+            --fail-under-line 0
+
+      # --- Upload the per-target .lcov tracefile ---
+      - name: Upload tracefile
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+          path: target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
+
+  merge-and-report:
+    name: Merge coverage & publish HTML
+    needs: coverage-matrix
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all coverage tracefiles
+        uses: actions/download-artifact@v3
+        with:
+          path: traces
+
+      - name: Install lcov & genhtml
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Merge LCOV tracefiles
+        run: |
+          # start with an empty baseline
+          lcov --quiet --directory . --capture --initial --output-file merged.lcov
+          # add each matrix tracefile
+          for f in traces/*.lcov; do
+            lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum
+          done
 
       - name: Generate HTML report
-        run: genhtml coverage/merged.info --output-directory coverage/html
-
-      - name: Print summary to log
-        run: lcov --summary coverage/merged.info
+        run: genhtml merged.lcov --output-directory coverage-report
 
       - name: Upload HTML coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: html-code-coverage
-          path: coverage/html
+          name: coverage-report
+          path: coverage-report
