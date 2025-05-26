@@ -92,6 +92,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
       - name: Download all coverage tracefiles
         uses: actions/download-artifact@v4
         with:
@@ -114,11 +119,6 @@ jobs:
               lcov --quiet --add-tracefile "$f" --output-file merged.lcov --no-checksum --ignore-errors empty
             done
           fi
-
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
       - name: Generate HTML report
         run: genhtml merged.lcov --output-directory coverage-report
