@@ -101,7 +101,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lcov
 
       - name: List lcov files
-        run: ls -lh traces/*.lcov || echo "No lcov files found"
+        run: find traces -type f -name "*.lcov" -ls || echo "No lcov files found"
 
       - name: Merge LCOV tracefiles
         run: |
