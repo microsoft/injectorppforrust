@@ -28,7 +28,7 @@ jobs:
           cargo tarpaulin --out Html --out Stdout --timeout 120
 
       - name: Upload HTML Report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: html-code-coverage
           path: tarpaulin-report.html
