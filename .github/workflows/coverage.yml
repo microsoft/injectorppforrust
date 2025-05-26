@@ -1,15 +1,30 @@
 name: Code Coverage
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
+    branches: [ main ]
+  pull_request:
     branches: [ main ]
 
 jobs:
   coverage:
-    runs-on: ubuntu-latest
-    name: Generate Coverage Report
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            tool: tarpaulin
+          # Linux ARM64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            tool: tarpaulin
+          # Windows MSVC
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            tool: llvm-cov
 
     steps:
       - uses: actions/checkout@v3
@@ -20,15 +35,74 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Install Tarpaulin
+      # Linux: Install tarpaulin (for LCOV); Windows: Install cargo‑llvm‑cov
+      - name: Install coverage tool
+        if: matrix.tool == 'tarpaulin'
         run: cargo install cargo-tarpaulin
+      - name: Install coverage tool
+        if: matrix.tool == 'llvm-cov'
+        run: cargo install cargo-llvm-cov
 
-      - name: Run Coverage (HTML + Summary)
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Run coverage and produce LCOV
+        shell: bash
         run: |
-          cargo tarpaulin --out Html --out Stdout --timeout 120
+          case "${{ matrix.tool }}" in
+            tarpaulin)
+              # on Linux (x86_64 & ARM64)
+              cargo tarpaulin \
+                --target ${{ matrix.target }} \
+                --out Lcov \
+                --output coverage-${{ matrix.target }}.info \
+                --timeout 120
+              ;;
+            llvm-cov)
+              # on Windows MSVC
+              cargo llvm-cov \
+                --lcov \
+                --output-path coverage-${{ matrix.target }}.info
+              ;;
+          esac
 
-      - name: Upload HTML Report
+      - name: Upload LCOV artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-${{ matrix.target }}
+          path: coverage-${{ matrix.target }}.info
+
+  merge-and-report:
+    name: Merge & HTML Report
+    runs-on: ubuntu-latest
+    needs: coverage
+    steps:
+      - name: Download all LCOV files
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage/
+
+      - name: Install lcov & genhtml
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lcov
+
+      - name: Merge LCOV files
+        run: |
+          # find all .info under coverage/ and merge them
+          lcov -a coverage/coverage-x86_64-unknown-linux-gnu.info \
+               -a coverage/coverage-aarch64-unknown-linux-gnu.info \
+               -a coverage/coverage-x86_64-pc-windows-msvc.info \
+               -o coverage/merged.info
+
+      - name: Generate HTML report
+        run: genhtml coverage/merged.info --output-directory coverage/html
+
+      - name: Print summary to log
+        run: lcov --summary coverage/merged.info
+
+      - name: Upload HTML coverage report
         uses: actions/upload-artifact@v4
         with:
           name: html-code-coverage
-          path: tarpaulin-report.html
+          path: coverage/html
