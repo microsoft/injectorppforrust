@@ -50,6 +50,9 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install llvm --no-progress
 
+      - name: Install LCOV on Windows
+        run: choco install lcov --no-progress
+
       # Nightly + llvm-cov
       - name: Install Rust nightly
         uses: actions-rs/toolchain@v1
@@ -88,7 +91,6 @@ jobs:
           path: target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov
 
       - name: Generate HTML report
-        if: runner.os == 'Linux'
         run: |
           genhtml target/coverage-${{ matrix.os }}-${{ matrix.target }}.lcov \
             --output-directory coverage-report-${{ matrix.os }}-${{ matrix.target }}
