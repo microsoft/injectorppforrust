@@ -71,7 +71,7 @@ jobs:
           CARGO_INCREMENTAL: "0"
         shell: bash
         run: |
-          cargo llvm-cov --workspace --html --target ${{ matrix.target }}
+          cargo llvm-cov --branch --workspace --html --target ${{ matrix.target }}
 
       - name: Move HTML report
         run: mv target/llvm-cov/html target/coverage-${{ matrix.os }}-${{ matrix.target }}
