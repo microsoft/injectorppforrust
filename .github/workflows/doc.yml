@@ -21,7 +21,7 @@ jobs:
           toolchain: stable
 
       - name: Build documentation
-        run: cargo doc --no-deps --locked
+        run: cargo doc --no-deps
 
       - name: Upload documentation as artifact (main branch only)
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
