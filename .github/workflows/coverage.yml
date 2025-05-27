@@ -71,9 +71,10 @@ jobs:
           CARGO_INCREMENTAL: "0"
         shell: bash
         run: |
-          cargo llvm-cov --workspace --html \
-            --target ${{ matrix.target }} \
-            --output-path target/coverage-${{ matrix.os }}-${{ matrix.target }}
+          cargo llvm-cov --workspace --html --target ${{ matrix.target }}
+
+      - name: Move HTML report
+        run: mv target/llvm-cov/html target/coverage-${{ matrix.os }}-${{ matrix.target }}
 
       - name: Upload HTML coverage report
         uses: actions/upload-artifact@v4
