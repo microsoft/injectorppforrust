@@ -388,3 +388,7 @@ async fn test_complex_struct_async_func_without_param_should_success() {
     assert_eq!(result, "GET https://test.com".to_string());
 }
 ```
+
+# Contributing
+
+This project welcomes contributions and suggestions. Please see the [CONTRIBUTING.md](CONTRIBUTING.md)
