@@ -421,9 +421,9 @@ impl Drop for CallCountVerifier {
 /// A high-level type that holds patch guards so that when it goes out of scope,
 /// the original function code is automatically restored.
 pub struct InjectorPP {
+    _lock: MutexGuard<'static, ()>,
     guards: Vec<PatchGuard>,
     verifiers: Vec<CallCountVerifier>,
-    _lock: MutexGuard<'static, ()>,
 }
 
 impl InjectorPP {
