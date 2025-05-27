@@ -30,7 +30,7 @@ jobs:
           toolchain: stable
           override: true
 
-      # ✅ Install QEMU only for Linux ARM64
+      # Install QEMU only for Linux ARM64
       - name: Set up QEMU
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@v3
