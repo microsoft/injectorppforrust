@@ -4,25 +4,29 @@ pub fn returns_false() -> bool {
     return false;
 }
 
+pub fn returns_false_in_scope() -> bool {
+    return false;
+}
+
 fn complex_generic_multiple_types_func_return_false<A, B, C>(_a: A, _b: B, _c: C) -> bool {
     return false;
 }
 
 #[test]
 fn test_will_return_boolean_when_in_scope_should_restore() {
-    assert_eq!(returns_false(), false);
+    assert_eq!(returns_false_in_scope(), false);
 
     {
         let mut injector = InjectorPP::new();
         injector
-            .when_called(injectorpp::func!(returns_false))
+            .when_called(injectorpp::func!(returns_false_in_scope))
             .will_return_boolean(true);
 
-        let result = returns_false();
+        let result = returns_false_in_scope();
         assert_eq!(result, true);
     }
 
-    let restored = returns_false();
+    let restored = returns_false_in_scope();
 
     assert_eq!(restored, false);
 }

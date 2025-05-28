@@ -420,10 +420,18 @@ impl Drop for CallCountVerifier {
 
 /// A high-level type that holds patch guards so that when it goes out of scope,
 /// the original function code is automatically restored.
+///
+/// # Thread Safety
+///
+/// InjectorPP ensures thread safety by holding a global mutex for the entire lifetime
+/// of the patch. However, users must ensure that no other thread executes the patched
+/// function after the InjectorPP instance is dropped. If multiple threads may execute
+/// the patched function concurrently, ensure that InjectorPP instances remain alive
+/// until all threads have completed execution of the patched function.
 pub struct InjectorPP {
-    _lock: MutexGuard<'static, ()>,
     guards: Vec<PatchGuard>,
     verifiers: Vec<CallCountVerifier>,
+    _lock: MutexGuard<'static, ()>,
 }
 
 impl InjectorPP {

@@ -139,6 +139,9 @@ impl Drop for PatchGuard {
                     VirtualFree(self.jit_memory as *mut c_void, 0, MEM_RELEASE);
                 }
             }
+
+            // Explicitly flush cache and synchronize pipeline after restoring original bytes
+            clear_cache(self.func_ptr, self.func_ptr.add(self.patch_size));
         }
     }
 }
@@ -152,20 +155,6 @@ pub unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
     make_memory_writable_and_executable(func);
 
     inject_asm_code(patch, func);
-
-    ptr::copy_nonoverlapping(patch.as_ptr(), func, patch.len());
-    clear_cache(func, func.add(patch.len()));
-
-    // Force the CPU pipeline to refetch instructions.
-    #[cfg(target_arch = "aarch64")]
-    {
-        core::arch::asm!("dsb sy", "isb", options(nostack, nomem));
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        core::arch::asm!("mfence", options(nostack, nomem));
-    }
 }
 
 unsafe fn make_memory_writable_and_executable(func: *mut u8) {
@@ -218,17 +207,6 @@ unsafe fn make_memory_writable_and_executable_windows(func: *const u8) {
 pub unsafe fn inject_asm_code(asm_code: &[u8], dest: *mut u8) {
     ptr::copy_nonoverlapping(asm_code.as_ptr(), dest, asm_code.len());
     clear_cache(dest, dest.add(asm_code.len()));
-
-    // Force the CPU pipeline to refetch instructions.
-    #[cfg(target_arch = "aarch64")]
-    {
-        core::arch::asm!("dsb sy", "isb", options(nostack, nomem));
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        core::arch::asm!("mfence", options(nostack, nomem));
-    }
 }
 
 unsafe fn clear_cache(start: *mut u8, end: *mut u8) {
@@ -246,5 +224,11 @@ unsafe fn clear_cache(start: *mut u8, end: *mut u8) {
         if success == 0 {
             panic!("FlushInstructionCache failed");
         }
+    }
+
+    // On ARM64, explicitly synchronize the CPU pipeline.
+    #[cfg(target_arch = "aarch64")]
+    {
+        core::arch::asm!("dsb sy", "isb", options(nostack, nomem));
     }
 }
