@@ -1,4 +1,3 @@
-# .github/workflows/coverage-diff.yml
 name: PR Diff Coverage
 
 on:
@@ -21,7 +20,7 @@ jobs:
       - name: Install Tarpaulin
         run: cargo install cargo-tarpaulin --version 0.23.0 --force
 
-      - name: Run Tarpaulin → JSON summary
+      - name: Run Tarpaulin -> JSON summary
         run: |
             mkdir -p coverage
             cargo tarpaulin \
