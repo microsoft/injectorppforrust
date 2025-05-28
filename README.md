@@ -224,7 +224,7 @@ fn test_will_execute_when_fake_generic_function_single_type_can_recover() {
 }
 ```
 
-More examples can be found [here](https://msazure.visualstudio.com/One/_git/azure-pfclient?path=/injectorpp/tests/will_execute.rs).
+More examples can be found [here](tests/will_execute.rs).
 
 ## `will_execute_raw`
 
