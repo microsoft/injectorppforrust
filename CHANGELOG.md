@@ -1,3 +1,8 @@
+# 0.3.3 (May 28, 2025)
+
+- Fix cache coherency issue and thread safety issue.
+- Add documents.
+
 # 0.3.2 (May 20, 2025)
 
 - Add support to fake async functions.
