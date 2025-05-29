@@ -1,6 +1,6 @@
 [package]
 name = "injectorpp"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Jingyu Ma <mazong1123us@gmail.com>"]
 license = "MIT"
 readme = "README.md"
