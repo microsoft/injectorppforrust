@@ -9,6 +9,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     environment: crates-io-publish
     steps:
       - uses: actions/checkout@v4
