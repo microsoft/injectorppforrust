@@ -1,6 +1,8 @@
 # Injectorpp for rust
 
 [![CI](https://github.com/microsoft/injectorppforrust/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/injectorppforrust/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/injectorpp.svg)](https://crates.io/crates/injectorpp)
+[![Documentation](https://docs.rs/injectorpp/badge.svg)](https://docs.rs/injectorpp)
 
 Injectorpp for rust is a crate that allows you to change rust function behavior at runtime without adding additional traits or code changes. It introduces an innovative and easy way to write rust unit tests.
 
