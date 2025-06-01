@@ -31,11 +31,12 @@ jobs:
         shell: bash
         run: echo $PATH
 
-      - uses: actions-rs/toolchain@v1
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          profile: minimal
           toolchain: stable
-          override: true
+          components: clippy, rustfmt
+          target: aarch64-pc-windows-msvc
 
       - name: Verify Cargo Installation
         shell: bash
