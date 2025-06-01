@@ -398,6 +398,37 @@ async fn test_complex_struct_async_func_without_param_should_success() {
 }
 ```
 
+## `Fake system functions`
+
+Traditionally, system functions could cause the code non-unit testable immediately. It's also one of the test challenges in the projects rely on low level system apis. Now with injectorpp, system function can be easily faked. Below is an example:
+
+```rust
+use std::ffi::CString;
+use std::os::raw::{c_char, c_int, c_uint};
+
+use injectorpp::interface::injector::*;
+
+extern "C" {
+    fn shm_open(name: *const c_char, oflag: c_int, mode: c_uint) -> c_int;
+}
+
+#[test]
+fn test_fake_shm_open_should_return_fixed_fd() {
+    // Fake shm_open to always return file descriptor 32
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(shm_open))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
+            returns: 32
+        ));
+
+    let name = CString::new("/myshm").unwrap();
+    let fd = unsafe { shm_open(name.as_ptr(), 0, 0o600) };
+    assert_eq!(fd, 32);
+}
+```
+
 # Contributing
 
 This project welcomes contributions and suggestions. Please see the [CONTRIBUTING.md](CONTRIBUTING.md)
