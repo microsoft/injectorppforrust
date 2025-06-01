@@ -44,7 +44,6 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
     assert_eq!(fd_fail, -1);
 
     // The default behavior (not matched by 'when') will panic, so let's add a second fake for the other case:
-    let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(shm_open))
         .will_execute(injectorpp::fake!(
