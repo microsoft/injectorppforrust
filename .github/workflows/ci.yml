@@ -18,6 +18,8 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
     name: Build & test on ${{ matrix.os }} / ${{ matrix.target }}
@@ -35,9 +37,9 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@v3
 
-      # Install cross for ARM64 targets
-      - name: Install cross for ARM64 targets
-        if: contains(matrix.target, 'aarch64')
+      # Install cross for Linux ARM64 targets
+      - name: Install cross for Linux ARM64 targets
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: cargo install cross --force
 
       # Add Rust target for all targets
