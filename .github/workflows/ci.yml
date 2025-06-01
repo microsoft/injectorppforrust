@@ -27,10 +27,19 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Debug PATH
+        shell: bash
+        run: echo $PATH
+
       - uses: actions-rs/toolchain@v1
         with:
+          profile: minimal
           toolchain: stable
           override: true
+
+      - name: Verify Cargo Installation
+        shell: bash
+        run: cargo --version
 
       # Install QEMU only for Linux ARM64
       - name: Set up QEMU
