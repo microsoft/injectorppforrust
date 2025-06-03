@@ -61,7 +61,7 @@ This approach eliminates the need to make a trait solely for testing purposes. I
 Add `injectorpp` to the `Cargo.toml`:
 
 ```toml
-[dependencies]
+[dev-dependencies]
 injectorpp = "0.3.3"
 ```
 
