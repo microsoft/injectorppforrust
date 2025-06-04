@@ -201,9 +201,12 @@ pub fn bits_to_u16(bits: &[bool; 16]) -> u16 {
         .fold(0, |acc, (i, b)| acc | ((*b as u16) << i))
 }
 
-pub fn bits_to_u8(bits: &[bool; 5]) -> u8 {
-    bits.iter()
-        .rev()
-        .enumerate()
-        .fold(0, |acc, (i, b)| acc | ((*b as u8) << i))
+pub fn bits_to_u8<const N: usize>(bits: &[bool; N]) -> u8 {
+    let mut out = 0u8;
+    for (i, b) in bits.iter().rev().enumerate() {
+        if *b {
+            out |= 1 << i;
+        }
+    }
+    out
 }
