@@ -2,6 +2,19 @@
 
 use crate::injector_core::utils::*;
 
+/// Insert `value` into a bit field of `u32` with range [lsb..=msb].
+#[inline(always)]
+const fn set_bits(value: u32, lsb: u8, msb: u8) -> u32 {
+    debug_assert!(msb < 32 && lsb <= msb);
+    debug_assert!(value < (1 << (msb - lsb + 1)));
+    value << lsb
+}
+
+/// Extracts a u16 from `start` bit of a 64-bit value.
+#[inline(always)]
+const fn extract16(src: u64, start: usize) -> u16 {
+    ((src >> start) & 0xFFFF) as u16
+}
 // C6.2.220 RET
 // Return from subroutine branches unconditionally to an address in a register, with a hint that this is a subroutine return.
 // x30 is used to hold the address to be branched to.
@@ -13,77 +26,9 @@ pub fn emit_ret_x30() -> [bool; 32] {
 // Return from subroutine branches unconditionally to an address in a register,
 // with a hint that this is a subroutine return.
 pub fn emit_ret(register_name: &[bool; 5]) -> [bool; 32] {
-    let mut code_bits = [false; 32];
-    let mut cur = 0;
-
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-
-    for &bit in register_name.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    code_bits[cur] = false;
-    cur += 1;
-
-    code_bits[cur] = false;
-    cur += 1;
-
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-
-    code_bits[cur] = false;
-    cur += 1;
-
-    code_bits[cur] = false;
-    cur += 1;
-
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = false;
-    cur += 1;
-    code_bits[cur] = true;
-    cur += 1;
-    code_bits[cur] = true;
-
-    code_bits
+    let reg_bits = bits_to_u8(register_name);
+    let insn = 0b11010110010111100000000000000000u32 | set_bits(reg_bits as u32, 5, 9);
+    u32_to_bits(insn)
 }
 
 /// Emit a 32‑bit BR (Branch to Register) instruction from a 5‑bit register name.
@@ -103,62 +48,9 @@ pub fn emit_ret(register_name: &[bool; 5]) -> [bool; 32] {
 ///
 /// Total: 5 + 5 + 2 + 6 + 5 + 2 + 1 + 1 + 5 = 32 bits.
 pub fn emit_br(register_name: [bool; 5]) -> [bool; 32] {
-    let mut code_bits = [false; 32];
-    let mut cur = 0;
-
-    // Group 1: 5 bits of 0.
-    for _ in 0..5 {
-        code_bits[cur] = false;
-        cur += 1;
-    }
-
-    // Group 2: 5 bits from register_name.
-    for &bit in register_name.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    // Group 3: 2 bits of 0.
-    code_bits[cur] = false;
-    cur += 1;
-
-    code_bits[cur] = false;
-    cur += 1;
-
-    // Group 4: 4 bits of 0.
-    for _ in 0..4 {
-        code_bits[cur] = false;
-        cur += 1;
-    }
-
-    // Group 5: 5 bits of 1.
-    for _ in 0..5 {
-        code_bits[cur] = true;
-        cur += 1;
-    }
-
-    // Group 6: 2 bits of 0.
-    for _ in 0..2 {
-        code_bits[cur] = false;
-        cur += 1;
-    }
-
-    // Group 7: 1 bit of 0.
-    code_bits[cur] = false;
-    cur += 1;
-
-    // Group 8: 1 bit of 0.
-    code_bits[cur] = false;
-    cur += 1;
-
-    // Group 9 (adjusted): 5 bits: 1, 1, 0, 1, 0, 1, 1
-    let group9 = [true, true, false, true, false, true, true];
-    for &bit in group9.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    code_bits
+    let reg_bits = bits_to_u8(&register_name);
+    let insn = 0b11010110000111110000000000000000u32 | set_bits(reg_bits as u32, 5, 9);
+    u32_to_bits(insn)
 }
 
 /// Converts a 64-bit address into a 32-bit instruction encoding.
@@ -181,10 +73,8 @@ pub fn emit_movk_from_address(
     hw: [bool; 2],
     register_name: [bool; 5],
 ) -> [bool; 32] {
-    let address_bits = u64_to_bits(address);
-    let mut value_bits = [false; 16];
-    value_bits.copy_from_slice(&address_bits[start..(16 + start)]);
-    emit_movk(value_bits, sf, hw, register_name)
+    let imm16 = extract16(address, start);
+    emit_movk(u16_to_bits(imm16), sf, hw, register_name)
 }
 
 /// Builds the 32-bit instruction encoding by concatenating:
@@ -210,45 +100,19 @@ pub fn emit_movk(
     hw: [bool; 2],
     register_name: [bool; 5],
 ) -> [bool; 32] {
-    let mut code_bits = [false; 32];
-    let mut cur = 0;
+    let rd = bits_to_u8(&register_name) as u32;
+    let imm = bits_to_u16(&value_bits) as u32;
+    let hw_val = bits_to_u8(&hw) as u32;
 
-    // Append register_name bits.
-    for &bit in register_name.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
+    let insn = (sf as u32) << 31
+        | set_bits(0b111101, 25, 30) // opc
+        | set_bits(hw_val, 21, 22)
+        | set_bits(imm, 5, 20)
+        | set_bits(0b101001, 10, 15)
+        | set_bits(0b11, 23, 24)
+        | set_bits(rd, 0, 4);
 
-    // Append immediate (value_bits).
-    for &bit in value_bits.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    // Append hw bits.
-    for &bit in hw.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    // Append fixed bits: 1, 0, 1, 0, 0, 1.
-    let fixed_bits1 = [true, false, true, false, false, true];
-    for &bit in fixed_bits1.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    // Append fixed bits: 1, 1.
-    let fixed_bits2 = [true, true];
-    for &bit in fixed_bits2.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    // Append the sf bit.
-    code_bits[cur] = sf;
-
-    code_bits
+    u32_to_bits(insn)
 }
 
 /// Extracts a 16-bit immediate value from `address` starting at bit `start`
@@ -270,10 +134,8 @@ pub fn emit_movz_from_address(
     hw: [bool; 2],
     register_name: [bool; 5],
 ) -> [bool; 32] {
-    let address_bits = u64_to_bits(address);
-    let mut value_bits = [false; 16];
-    value_bits.copy_from_slice(&address_bits[start..(16 + start)]);
-    emit_movz(value_bits, sf, hw, register_name)
+    let imm16 = extract16(address, start);
+    emit_movz(u16_to_bits(imm16), sf, hw, register_name)
 }
 
 /// Assembles a 32-bit MOVZ instruction by concatenating:
@@ -299,43 +161,49 @@ pub fn emit_movz(
     hw: [bool; 2],
     register_name: [bool; 5],
 ) -> [bool; 32] {
-    let mut code_bits = [false; 32];
-    let mut cur = 0;
+    let rd = bits_to_u8(&register_name) as u32;
+    let imm = bits_to_u16(&value_bits) as u32;
+    let hw_val = bits_to_u8(&hw) as u32;
 
-    // Append register_name bits.
-    for &bit in register_name.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
+    let insn = (sf as u32) << 31
+        | set_bits(0b110101, 25, 30)
+        | set_bits(hw_val, 21, 22)
+        | set_bits(imm, 5, 20)
+        | set_bits(0b101001, 10, 15)
+        | set_bits(0b01, 23, 24)
+        | set_bits(rd, 0, 4);
+
+    u32_to_bits(insn)
+}
+
+
+
+pub fn u32_to_bits(v: u32) -> [bool; 32] {
+    let mut out = [false; 32];
+    for i in 0..32 {
+        out[31 - i] = (v >> i) & 1 != 0;
     }
+    out
+}
 
-    // Append immediate (value_bits).
-    for &bit in value_bits.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
+pub fn u16_to_bits(v: u16) -> [bool; 16] {
+    let mut out = [false; 16];
+    for i in 0..16 {
+        out[15 - i] = (v >> i) & 1 != 0;
     }
+    out
+}
 
-    // Append hw bits.
-    for &bit in hw.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
+pub fn bits_to_u16(bits: &[bool; 16]) -> u16 {
+    bits.iter()
+        .rev()
+        .enumerate()
+        .fold(0, |acc, (i, b)| acc | ((*b as u16) << i))
+}
 
-    // Append fixed bits: 1, 0, 1, 0, 0, 1.
-    let fixed_bits1 = [true, false, true, false, false, true];
-    for &bit in fixed_bits1.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    // Append fixed bits: 0, 1.
-    let fixed_bits2 = [false, true];
-    for &bit in fixed_bits2.iter() {
-        code_bits[cur] = bit;
-        cur += 1;
-    }
-
-    // Append the sf bit.
-    code_bits[cur] = sf;
-
-    code_bits
+pub fn bits_to_u8(bits: &[bool; 5]) -> u8 {
+    bits.iter()
+        .rev()
+        .enumerate()
+        .fold(0, |acc, (i, b)| acc | ((*b as u8) << i))
 }
