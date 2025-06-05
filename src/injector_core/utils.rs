@@ -2,6 +2,7 @@
 
 /// Convert a u64 value into a [bool; 64] array of bits.
 /// Bit 0 is the least-significant bit.
+#[allow(dead_code)]
 pub fn u64_to_bits(n: u64) -> [bool; 64] {
     let mut bits = [false; 64];
     for (i, bit) in bits.iter_mut().enumerate() {
