@@ -34,40 +34,35 @@ jobs:
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@v3
 
-      - name: Install cross
+      - name: Install cross if needed
         if: contains(matrix.target, 'aarch64')
         run: cargo install cross --force
 
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Create .cargo/config.toml for aarch64
+      - name: Set up .cargo/config.toml for aarch64
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           mkdir -p $GITHUB_WORKSPACE/.cargo
-          echo '[target.aarch64-unknown-linux-gnu]' > $GITHUB_WORKSPACE/.cargo/config.toml
-          echo 'rustflags = ["-Ctarget-cpu=cortex-a53"]' >> $GITHUB_WORKSPACE/.cargo/config.toml
-
-      - name: Create .cross.toml for aarch64
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          echo '[target.aarch64-unknown-linux-gnu]' > .cross.toml
-          echo 'runner = "qemu-aarch64 -cpu cortex-a53 -L /usr/aarch64-linux-gnu"' >> .cross.toml
+          cat <<EOF > $GITHUB_WORKSPACE/.cargo/config.toml
+[target.aarch64-unknown-linux-gnu]
+runner = "qemu-aarch64 -cpu cortex-a53 -L /usr/aarch64-linux-gnu"
+rustflags = ["-Ctarget-cpu=cortex-a53"]
+EOF
 
       - name: Build
-        shell: bash
         run: |
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            cross build --target ${{ matrix.target }} --release
+            cargo build --target ${{ matrix.target }} --release
           else
             cargo build --target ${{ matrix.target }} --release
           fi
 
       - name: Test
-        shell: bash
         run: |
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            cross test --target ${{ matrix.target }} -- --nocapture
+            cargo test --target ${{ matrix.target }} -- --nocapture
           else
             cargo test --target ${{ matrix.target }} -- --nocapture
           fi
