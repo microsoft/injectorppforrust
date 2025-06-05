@@ -30,26 +30,29 @@ jobs:
           toolchain: stable
           override: true
 
-      # Install QEMU only for Linux ARM64
-      - name: Set up QEMU
+      - name: Install QEMU for aarch64
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@v3
 
-      # Install cross for ARM64 targets
-      - name: Install cross for ARM64 targets
+      - name: Install cross
         if: contains(matrix.target, 'aarch64')
         run: cargo install cross --force
 
-      # Add Rust target for all targets
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
       - name: Create .cargo/config.toml for aarch64
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          mkdir -p .cargo
-          echo '[target.aarch64-unknown-linux-gnu]' > .cargo/config.toml
-          echo 'rustflags = ["-Ctarget-cpu=cortex-a53"]' >> .cargo/config.toml
+          mkdir -p $GITHUB_WORKSPACE/.cargo
+          echo '[target.aarch64-unknown-linux-gnu]' > $GITHUB_WORKSPACE/.cargo/config.toml
+          echo 'rustflags = ["-Ctarget-cpu=cortex-a53"]' >> $GITHUB_WORKSPACE/.cargo/config.toml
+
+      - name: Create .cross.toml for aarch64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo '[target.aarch64-unknown-linux-gnu]' > .cross.toml
+          echo 'runner = "qemu-aarch64 -cpu cortex-a53 -L /usr/aarch64-linux-gnu"' >> .cross.toml
 
       - name: Build
         shell: bash
