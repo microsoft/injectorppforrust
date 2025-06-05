@@ -30,34 +30,32 @@ jobs:
           toolchain: stable
           override: true
 
-      # Install QEMU only for Linux ARM64
-      - name: Set up QEMU
+      - name: Install QEMU for aarch64
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@v3
 
-      # Install cross for ARM64 targets
-      - name: Install cross for ARM64 targets
-        if: contains(matrix.target, 'aarch64')
+      - name: Install cross (only for ARM)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: cargo install cross --force
 
-      # Add Rust target for all targets
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Build
-        shell: bash
+      
+      - name: Configure runner & CPU for aarch64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            cross build --target ${{ matrix.target }} --release
-          else
-            cargo build --target ${{ matrix.target }} --release
-          fi
+          mkdir -p .cargo
+          cat <<EOF > .cargo/config.toml
+          [target.aarch64-unknown-linux-gnu]
+          runner = "qemu-aarch64 -cpu cortex-a53 -L /usr/aarch64-linux-gnu"
+          rustflags = ["-Ctarget-cpu=cortex-a53"]
+          EOF
+
+      - name: Build
+        run: |
+          cargo build --target ${{ matrix.target }} --release
 
       - name: Test
-        shell: bash
         run: |
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            cross test --target ${{ matrix.target }} -- --nocapture
-          else
-            cargo test --target ${{ matrix.target }} -- --nocapture
-          fi
+          cargo test --target ${{ matrix.target }} -- --nocapture
