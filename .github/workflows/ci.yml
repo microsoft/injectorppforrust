@@ -44,6 +44,13 @@ jobs:
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Create .cargo/config.toml for aarch64
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          mkdir -p .cargo
+          echo '[target.aarch64-unknown-linux-gnu]' > .cargo/config.toml
+          echo 'rustflags = ["-Ctarget-cpu=cortex-a53"]' >> .cargo/config.toml
+
       - name: Build
         shell: bash
         run: |
