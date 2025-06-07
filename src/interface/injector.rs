@@ -429,12 +429,12 @@ impl FuncPtr {
     /// The caller must ensure that the pointer is valid and points to a function.
     pub unsafe fn new(ptr: *const ()) -> Self {
         let p = ptr as *mut ();
-        let nn = NonNull::new(p).expect("FuncPtr::new: pointer must not be null");
+        let nn = NonNull::new(p).expect("Pointer must not be null");
 
         const MIN_FUNC_PTR_ALIGN: usize = std::mem::size_of::<usize>();
         assert!(
             (nn.as_ptr() as usize) % MIN_FUNC_PTR_ALIGN == 0,
-            "FuncPtr::new: pointer has insufficient alignment for function pointer"
+            "Pointer has insufficient alignment for function pointer"
         );
 
         FuncPtr(nn)
