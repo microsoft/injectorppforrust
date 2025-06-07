@@ -3,6 +3,7 @@ use crate::injector_core::internal::*;
 
 use std::future::Future;
 use std::pin::Pin;
+use std::ptr::NonNull;
 use std::sync::atomic::*;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -47,12 +48,12 @@ macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
     ($f:ident :: <$($gen:ty),*>) => {{
         let ptr = $f::<$($gen),*>;
-        ptr as *const ()
+        unsafe { FuncPtr::new(ptr as *const ()) }
     }};
 
     // Case 2: Non-generic function
     ($f:expr) => {
-        $f as *const ()
+        unsafe { FuncPtr::new($f as *const ()) }
     };
 }
 
@@ -61,7 +62,7 @@ macro_rules! func {
 macro_rules! closure {
     ($closure:expr, $fn_type:ty) => {{
         let fn_ptr: $fn_type = $closure;
-        fn_ptr as *const ()
+        unsafe { FuncPtr::new(fn_ptr as *const ()) }
     }};
 }
 
@@ -418,6 +419,33 @@ impl Drop for CallCountVerifier {
     }
 }
 
+pub struct FuncPtr(NonNull<()>);
+
+impl FuncPtr {
+    /// Creates a new `FuncPtr` from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the pointer is valid and points to a function.
+    pub unsafe fn new(ptr: *const ()) -> Self {
+        let p = ptr as *mut ();
+        let nn = NonNull::new(p).expect("FuncPtr::new: pointer must not be null");
+
+        const MIN_FUNC_PTR_ALIGN: usize = std::mem::size_of::<usize>();
+        assert!(
+            (nn.as_ptr() as usize) % MIN_FUNC_PTR_ALIGN == 0,
+            "FuncPtr::new: pointer has insufficient alignment for function pointer"
+        );
+
+        FuncPtr(nn)
+    }
+
+    /// Returns the raw pointer to the function.
+    pub(crate) fn as_ptr(&self) -> *const () {
+        self.0.as_ptr()
+    }
+}
+
 /// A high-level type that holds patch guards so that when it goes out of scope,
 /// the original function code is automatically restored.
 ///
@@ -486,8 +514,8 @@ impl InjectorPP {
     ///
     /// assert!(Path::new("/non/existent/path").exists());
     /// ```
-    pub fn when_called(&mut self, func: *const ()) -> WhenCalledBuilder<'_> {
-        let when = WhenCalled::new(func);
+    pub fn when_called(&mut self, func: FuncPtr) -> WhenCalledBuilder<'_> {
+        let when = WhenCalled::new(func.as_ptr());
         WhenCalledBuilder { lib: self, when }
     }
 
@@ -528,7 +556,7 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(func!(poll_fn));
+        let when = WhenCalled::new(func!(poll_fn).as_ptr());
         WhenCalledBuilderAsync { lib: self, when }
     }
 }
@@ -589,8 +617,8 @@ impl WhenCalledBuilder<'_> {
     ///
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
-    pub fn will_execute_raw(self, target: *const ()) {
-        let guard = self.when.will_execute_guard(target);
+    pub fn will_execute_raw(self, target: FuncPtr) {
+        let guard = self.when.will_execute_guard(target.as_ptr());
         self.lib.guards.push(guard);
     }
 
@@ -634,7 +662,8 @@ impl WhenCalledBuilder<'_> {
     pub fn will_execute(self, fake_pair: (*const (), CallCountVerifier)) {
         let (fake_func, verifier) = fake_pair;
         self.lib.verifiers.push(verifier);
-        self.will_execute_raw(func!(fake_func));
+        //self.will_execute_raw(func!(fake_func));
+        self.will_execute_raw(unsafe { FuncPtr::new(fake_func) });
     }
 
     /// Fake the target function to always return a fixed boolean value.
@@ -701,8 +730,8 @@ impl WhenCalledBuilderAsync<'_> {
     ///     assert_eq!(result, false);
     /// }
     /// ```
-    pub fn will_return_async(self, target: *const ()) {
-        let guard = self.when.will_execute_guard(target);
+    pub fn will_return_async(self, target: FuncPtr) {
+        let guard = self.when.will_execute_guard(target.as_ptr());
         self.lib.guards.push(guard);
     }
 }
