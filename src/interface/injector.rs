@@ -103,7 +103,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when, assign, and returns (no times).
     (
@@ -122,7 +122,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and returns, times, but no assign.
     (
@@ -146,7 +146,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and returns (no times, no assign).
     (
@@ -163,7 +163,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign, returns and times
     (
@@ -188,7 +188,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign and returns
     (
@@ -206,7 +206,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With times and returns
     (
@@ -229,7 +229,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With returns only.
     (
@@ -245,7 +245,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
 
     // === UNIT RETURNING FUNCTIONS (-> ()) ===
@@ -272,7 +272,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -295,7 +295,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -312,7 +312,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign only
     (
@@ -328,7 +328,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign and times
     (
@@ -353,7 +353,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -375,7 +375,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -659,11 +659,11 @@ impl WhenCalledBuilder<'_> {
     /// `assign``: // Optional. Use to set values to reference variables of the function to fake.
     /// `returns``: // Required for the function has return. Specify what the return value should be.
     /// `times``: // Optional. How many times the function should be called. If the value is not satisfied at the end of the test, the test will fail.
-    pub fn will_execute(self, fake_pair: (*const (), CallCountVerifier)) {
+    pub fn will_execute(self, fake_pair: (FuncPtr, CallCountVerifier)) {
         let (fake_func, verifier) = fake_pair;
         self.lib.verifiers.push(verifier);
         //self.will_execute_raw(func!(fake_func));
-        self.will_execute_raw(unsafe { FuncPtr::new(fake_func) });
+        self.will_execute_raw(fake_func);
     }
 
     /// Fake the target function to always return a fixed boolean value.
