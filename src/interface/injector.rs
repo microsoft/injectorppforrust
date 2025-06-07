@@ -42,7 +42,19 @@ impl<T> NoPoisonMutex<T> {
 
 static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 
-// Convert the function to a raw pointer that can be used by injector.
+/// Converts a function to a `FuncPtr`.
+///
+/// This macro handles both generic and non-generic functions:
+/// - For generic functions, provide the function name and type parameters separately: `func!(function_name::<Type1, Type2>)`
+/// - For non-generic functions, simply provide the function: `func!(function_name)`
+///
+/// # Safety
+///
+/// This macro uses unsafe code internally and comes with the following requirements:
+/// - The function pointer must remain valid for the entire duration it's used by injectorpp
+/// - The function signature must match exactly what the injectorpp expects at runtime
+/// - Mismatched function signatures will lead to undefined behavior or memory corruption
+/// - Function pointers created with this macro should only be used with the appropriate injectorpp APIs
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
@@ -57,7 +69,23 @@ macro_rules! func {
     };
 }
 
-// Convert the closure to a raw pointer that can be used by injector.
+/// Converts a closure to a `FuncPtr`.
+///
+/// This macro allows you to use Rust closures as mock implementations in injectorpp
+/// by converting them to function pointers.
+///
+/// # Parameters
+///
+/// - `$closure`: The closure to convert
+/// - `$fn_type`: The explicit function type signature that the closure conforms to
+///
+/// # Safety
+///
+/// This macro uses unsafe code internally and comes with significant safety requirements:
+/// - The closure's signature must exactly match the provided function type
+/// - The closure must not capture any references or variables with lifetimes shorter than the mock's usage
+/// - The closure must remain valid for the entire duration it's used by injectorpp
+/// - Mismatched function signatures will lead to undefined behavior or memory corruption
 #[macro_export]
 macro_rules! closure {
     ($closure:expr, $fn_type:ty) => {{
@@ -74,7 +102,28 @@ macro_rules! async_func {
     };
 }
 
-// Macro to generate a fake function with a clear, named syntax.
+/// Creates a mock function implementation with configurable behavior and verification.
+///
+/// This macro generates a function that can be used to replace real functions during testing.
+/// It supports configuring return values, parameter validation, side effects through
+/// reference parameters, and verification of call counts.
+///
+/// # Parameters
+///
+/// - `func_type`: Required. The function signature to mock (e.g., `fn(x: i32) -> bool`).
+/// - `when`: Optional. A condition on the function parameters that must be true for the mock to execute.
+/// - `assign`: Optional. Code block to execute for modifying reference parameters.
+/// - `returns`: Required for non-unit functions. The value to return from the mock.
+/// - `times`: Optional. Verifies the function is called exactly this many times.
+///
+/// # Safety
+///
+/// This macro uses unsafe code internally and comes with significant safety requirements:
+/// - The function signature must exactly match the signature of the function being mocked
+/// - The mock must handle all possible input parameters correctly
+/// - Memory referenced by parameters must remain valid for the duration of the function call
+/// - Type mismatches between the mocked function and its implementation will cause undefined behavior
+/// - Mock functions created with this macro must only be used with the `will_execute` method
 #[macro_export]
 macro_rules! fake {
     // === NON-UNIT RETURNING FUNCTIONS (return type not "()") ===
@@ -419,6 +468,16 @@ impl Drop for CallCountVerifier {
     }
 }
 
+/// A safe wrapper around a raw function pointer.
+///
+/// `FuncPtr` encapsulates a non-null function pointer and provides safe
+/// creation and access methods. It's used throughout injectorpp
+/// to represent both original functions to be mocked and their replacement
+/// implementations.
+///
+/// # Safety
+///
+/// The caller must ensure that the pointer is valid and points to a function.
 pub struct FuncPtr(NonNull<()>);
 
 impl FuncPtr {
@@ -428,6 +487,9 @@ impl FuncPtr {
     ///
     /// The caller must ensure that the pointer is valid and points to a function.
     pub unsafe fn new(ptr: *const ()) -> Self {
+        // While these basic checks are performed, it is not a substitute for
+        // proper function pointer validation. The caller must ensure that the
+        // pointer is indeed a valid function pointer.
         let p = ptr as *mut ();
         let nn = NonNull::new(p).expect("Pointer must not be null");
 
@@ -441,7 +503,7 @@ impl FuncPtr {
     }
 
     /// Returns the raw pointer to the function.
-    pub(crate) fn as_ptr(&self) -> *const () {
+    fn as_ptr(&self) -> *const () {
         self.0.as_ptr()
     }
 }
@@ -487,11 +549,11 @@ impl InjectorPP {
 
     /// Begins faking a function.
     ///
-    /// Accepts a raw pointer to the function you want to fake. Use the `func!` macro to obtain this pointer.
+    /// Accepts a FuncPtr to the function you want to fake. Use the `func!` macro to obtain this pointer.
     ///
     /// # Parameters
     ///
-    /// - `func`: Raw pointer to the target function obtained via `func!` macro.
+    /// - `func`: A FuncPtr holds the pointer to the target function obtained via `func!` macro.
     ///
     /// # Returns
     ///
@@ -574,13 +636,13 @@ pub struct WhenCalledBuilder<'a> {
 }
 
 impl WhenCalledBuilder<'_> {
-    /// Fake the target function to branch to the provided raw function pointer.
+    /// Fake the target function to branch to the provided function.
     ///
     /// Allows full customization of the faked function behavior by providing your own function or closure.
     ///
     /// # Parameters
     ///
-    /// - `target`: Raw pointer to the replacement function or closure. Using injectorpp::func! or injectorpp::closure! macros is recommended to obtain this pointer.
+    /// - `target`: A FuncPtr holds the pointer to the replacement function or closure. Using injectorpp::func! or injectorpp::closure! macros is recommended to obtain this pointer.
     ///
     /// # Example
     ///
@@ -662,7 +724,6 @@ impl WhenCalledBuilder<'_> {
     pub fn will_execute(self, fake_pair: (FuncPtr, CallCountVerifier)) {
         let (fake_func, verifier) = fake_pair;
         self.lib.verifiers.push(verifier);
-        //self.will_execute_raw(func!(fake_func));
         self.will_execute_raw(fake_func);
     }
 
