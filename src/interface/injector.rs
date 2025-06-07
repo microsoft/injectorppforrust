@@ -64,9 +64,10 @@ macro_rules! func {
     }};
 
     // Case 2: Non-generic function
-    ($f:expr) => {
-        unsafe { FuncPtr::new($f as *const ()) }
-    };
+    ($f:expr) => {{
+        let ptr = $f as *const ();
+        unsafe { FuncPtr::new(ptr) }
+    }};
 }
 
 /// Converts a closure to a `FuncPtr`.
@@ -492,12 +493,6 @@ impl FuncPtr {
         // pointer is indeed a valid function pointer.
         let p = ptr as *mut ();
         let nn = NonNull::new(p).expect("Pointer must not be null");
-
-        const MIN_FUNC_PTR_ALIGN: usize = std::mem::size_of::<usize>();
-        assert!(
-            (nn.as_ptr() as usize) % MIN_FUNC_PTR_ALIGN == 0,
-            "Pointer has insufficient alignment for function pointer"
-        );
 
         FuncPtr(nn)
     }
