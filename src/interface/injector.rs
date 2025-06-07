@@ -3,6 +3,7 @@ use crate::injector_core::internal::*;
 
 use std::future::Future;
 use std::pin::Pin;
+use std::ptr::NonNull;
 use std::sync::atomic::*;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -41,27 +42,56 @@ impl<T> NoPoisonMutex<T> {
 
 static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 
-// Convert the function to a raw pointer that can be used by injector.
+/// Converts a function to a `FuncPtr`.
+///
+/// This macro handles both generic and non-generic functions:
+/// - For generic functions, provide the function name and type parameters separately: `func!(function_name::<Type1, Type2>)`
+/// - For non-generic functions, simply provide the function: `func!(function_name)`
+///
+/// # Safety
+///
+/// This macro uses unsafe code internally and comes with the following requirements:
+/// - The function pointer must remain valid for the entire duration it's used by injectorpp
+/// - The function signature must match exactly what the injectorpp expects at runtime
+/// - Mismatched function signatures will lead to undefined behavior or memory corruption
+/// - Function pointers created with this macro should only be used with the appropriate injectorpp APIs
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
     ($f:ident :: <$($gen:ty),*>) => {{
         let ptr = $f::<$($gen),*>;
-        ptr as *const ()
+        unsafe { FuncPtr::new(ptr as *const ()) }
     }};
 
     // Case 2: Non-generic function
-    ($f:expr) => {
-        $f as *const ()
-    };
+    ($f:expr) => {{
+        let ptr = $f as *const ();
+        unsafe { FuncPtr::new(ptr) }
+    }};
 }
 
-// Convert the closure to a raw pointer that can be used by injector.
+/// Converts a closure to a `FuncPtr`.
+///
+/// This macro allows you to use Rust closures as mock implementations in injectorpp
+/// by converting them to function pointers.
+///
+/// # Parameters
+///
+/// - `$closure`: The closure to convert
+/// - `$fn_type`: The explicit function type signature that the closure conforms to
+///
+/// # Safety
+///
+/// This macro uses unsafe code internally and comes with significant safety requirements:
+/// - The closure's signature must exactly match the provided function type
+/// - The closure must not capture any references or variables with lifetimes shorter than the mock's usage
+/// - The closure must remain valid for the entire duration it's used by injectorpp
+/// - Mismatched function signatures will lead to undefined behavior or memory corruption
 #[macro_export]
 macro_rules! closure {
     ($closure:expr, $fn_type:ty) => {{
         let fn_ptr: $fn_type = $closure;
-        fn_ptr as *const ()
+        unsafe { FuncPtr::new(fn_ptr as *const ()) }
     }};
 }
 
@@ -73,7 +103,28 @@ macro_rules! async_func {
     };
 }
 
-// Macro to generate a fake function with a clear, named syntax.
+/// Creates a mock function implementation with configurable behavior and verification.
+///
+/// This macro generates a function that can be used to replace real functions during testing.
+/// It supports configuring return values, parameter validation, side effects through
+/// reference parameters, and verification of call counts.
+///
+/// # Parameters
+///
+/// - `func_type`: Required. The function signature to mock (e.g., `fn(x: i32) -> bool`).
+/// - `when`: Optional. A condition on the function parameters that must be true for the mock to execute.
+/// - `assign`: Optional. Code block to execute for modifying reference parameters.
+/// - `returns`: Required for non-unit functions. The value to return from the mock.
+/// - `times`: Optional. Verifies the function is called exactly this many times.
+///
+/// # Safety
+///
+/// This macro uses unsafe code internally and comes with significant safety requirements:
+/// - The function signature must exactly match the signature of the function being mocked
+/// - The mock must handle all possible input parameters correctly
+/// - Memory referenced by parameters must remain valid for the duration of the function call
+/// - Type mismatches between the mocked function and its implementation will cause undefined behavior
+/// - Mock functions created with this macro must only be used with the `will_execute` method
 #[macro_export]
 macro_rules! fake {
     // === NON-UNIT RETURNING FUNCTIONS (return type not "()") ===
@@ -102,7 +153,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when, assign, and returns (no times).
     (
@@ -121,7 +172,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and returns, times, but no assign.
     (
@@ -145,7 +196,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and returns (no times, no assign).
     (
@@ -162,7 +213,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign, returns and times
     (
@@ -187,7 +238,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign and returns
     (
@@ -205,7 +256,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With times and returns
     (
@@ -228,7 +279,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With returns only.
     (
@@ -244,7 +295,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
 
     // === UNIT RETURNING FUNCTIONS (-> ()) ===
@@ -271,7 +322,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -294,7 +345,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -311,7 +362,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign only
     (
@@ -327,7 +378,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With assign and times
     (
@@ -352,7 +403,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -374,7 +425,7 @@ macro_rules! fake {
              }
          }
          let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -415,6 +466,40 @@ impl Drop for CallCountVerifier {
         }
 
         // Dummy variant does nothing on drop.
+    }
+}
+
+/// A safe wrapper around a raw function pointer.
+///
+/// `FuncPtr` encapsulates a non-null function pointer and provides safe
+/// creation and access methods. It's used throughout injectorpp
+/// to represent both original functions to be mocked and their replacement
+/// implementations.
+///
+/// # Safety
+///
+/// The caller must ensure that the pointer is valid and points to a function.
+pub struct FuncPtr(NonNull<()>);
+
+impl FuncPtr {
+    /// Creates a new `FuncPtr` from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the pointer is valid and points to a function.
+    pub unsafe fn new(ptr: *const ()) -> Self {
+        // While these basic checks are performed, it is not a substitute for
+        // proper function pointer validation. The caller must ensure that the
+        // pointer is indeed a valid function pointer.
+        let p = ptr as *mut ();
+        let nn = NonNull::new(p).expect("Pointer must not be null");
+
+        FuncPtr(nn)
+    }
+
+    /// Returns the raw pointer to the function.
+    fn as_ptr(&self) -> *const () {
+        self.0.as_ptr()
     }
 }
 
@@ -459,11 +544,11 @@ impl InjectorPP {
 
     /// Begins faking a function.
     ///
-    /// Accepts a raw pointer to the function you want to fake. Use the `func!` macro to obtain this pointer.
+    /// Accepts a FuncPtr to the function you want to fake. Use the `func!` macro to obtain this pointer.
     ///
     /// # Parameters
     ///
-    /// - `func`: Raw pointer to the target function obtained via `func!` macro.
+    /// - `func`: A FuncPtr holds the pointer to the target function obtained via `func!` macro.
     ///
     /// # Returns
     ///
@@ -486,8 +571,8 @@ impl InjectorPP {
     ///
     /// assert!(Path::new("/non/existent/path").exists());
     /// ```
-    pub fn when_called(&mut self, func: *const ()) -> WhenCalledBuilder<'_> {
-        let when = WhenCalled::new(func);
+    pub fn when_called(&mut self, func: FuncPtr) -> WhenCalledBuilder<'_> {
+        let when = WhenCalled::new(func.as_ptr());
         WhenCalledBuilder { lib: self, when }
     }
 
@@ -528,7 +613,7 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(func!(poll_fn));
+        let when = WhenCalled::new(func!(poll_fn).as_ptr());
         WhenCalledBuilderAsync { lib: self, when }
     }
 }
@@ -546,13 +631,13 @@ pub struct WhenCalledBuilder<'a> {
 }
 
 impl WhenCalledBuilder<'_> {
-    /// Fake the target function to branch to the provided raw function pointer.
+    /// Fake the target function to branch to the provided function.
     ///
     /// Allows full customization of the faked function behavior by providing your own function or closure.
     ///
     /// # Parameters
     ///
-    /// - `target`: Raw pointer to the replacement function or closure. Using injectorpp::func! or injectorpp::closure! macros is recommended to obtain this pointer.
+    /// - `target`: A FuncPtr holds the pointer to the replacement function or closure. Using injectorpp::func! or injectorpp::closure! macros is recommended to obtain this pointer.
     ///
     /// # Example
     ///
@@ -589,8 +674,8 @@ impl WhenCalledBuilder<'_> {
     ///
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
-    pub fn will_execute_raw(self, target: *const ()) {
-        let guard = self.when.will_execute_guard(target);
+    pub fn will_execute_raw(self, target: FuncPtr) {
+        let guard = self.when.will_execute_guard(target.as_ptr());
         self.lib.guards.push(guard);
     }
 
@@ -631,10 +716,10 @@ impl WhenCalledBuilder<'_> {
     /// `assign``: // Optional. Use to set values to reference variables of the function to fake.
     /// `returns``: // Required for the function has return. Specify what the return value should be.
     /// `times``: // Optional. How many times the function should be called. If the value is not satisfied at the end of the test, the test will fail.
-    pub fn will_execute(self, fake_pair: (*const (), CallCountVerifier)) {
+    pub fn will_execute(self, fake_pair: (FuncPtr, CallCountVerifier)) {
         let (fake_func, verifier) = fake_pair;
         self.lib.verifiers.push(verifier);
-        self.will_execute_raw(func!(fake_func));
+        self.will_execute_raw(fake_func);
     }
 
     /// Fake the target function to always return a fixed boolean value.
@@ -701,8 +786,8 @@ impl WhenCalledBuilderAsync<'_> {
     ///     assert_eq!(result, false);
     /// }
     /// ```
-    pub fn will_return_async(self, target: *const ()) {
-        let guard = self.when.will_execute_guard(target);
+    pub fn will_return_async(self, target: FuncPtr) {
+        let guard = self.when.will_execute_guard(target.as_ptr());
         self.lib.guards.push(guard);
     }
 }

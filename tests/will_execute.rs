@@ -91,6 +91,20 @@ fn test_will_execute_when_fake_file_dependency_should_success() {
 }
 
 #[test]
+fn test_will_execute_when_fake_std_fs_read_should_success() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(std::fs::read::<&str>))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_path: &std::path::Path) -> std::io::Result<Vec<u8>>,
+            returns: Ok(vec![1, 2, 3])
+        ));
+
+    let data = std::fs::read("fake.txt").unwrap();
+    assert_eq!(data, vec![1, 2, 3]);
+}
+
+#[test]
 fn test_will_execute_when_fake_no_return_function_should_success() {
     let mut injector = InjectorPP::new();
     injector

@@ -61,7 +61,7 @@ This approach eliminates the need to make a trait solely for testing purposes. I
 Add `injectorpp` to the `Cargo.toml`:
 
 ```toml
-[dependencies]
+[dev-dependencies]
 injectorpp = "0.3.3"
 ```
 
@@ -395,6 +395,37 @@ async fn test_complex_struct_async_func_without_param_should_success() {
     // The original function should be called as the injector is out of scope
     let result = real_client.get().await;
     assert_eq!(result, "GET https://test.com".to_string());
+}
+```
+
+## `Fake system functions`
+
+Traditionally, system functions could cause the code non-unit testable immediately. It's also one of the test challenges in the projects rely on low level system apis. Now with injectorpp, system function can be easily faked. Below is an example:
+
+```rust
+use std::ffi::CString;
+use std::os::raw::{c_char, c_int, c_uint};
+
+use injectorpp::interface::injector::*;
+
+extern "C" {
+    fn shm_open(name: *const c_char, oflag: c_int, mode: c_uint) -> c_int;
+}
+
+#[test]
+fn test_fake_shm_open_should_return_fixed_fd() {
+    // Fake shm_open to always return file descriptor 32
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(shm_open))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
+            returns: 32
+        ));
+
+    let name = CString::new("/myshm").unwrap();
+    let fd = unsafe { shm_open(name.as_ptr(), 0, 0o600) };
+    assert_eq!(fd, 32);
 }
 ```
 
