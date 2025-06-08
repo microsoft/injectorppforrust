@@ -29,13 +29,8 @@ impl PatchTrait for PatchArm64 {
         unsafe {
             patch_function(src, &patch);
         }
-        PatchGuard {
-            func_ptr: src,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        }
+
+        PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
     }
 
     fn replace_function_return_boolean(src: *mut u8, value: bool) -> PatchGuard {
@@ -59,13 +54,8 @@ impl PatchTrait for PatchArm64 {
         unsafe {
             patch_function(src, &patch);
         }
-        PatchGuard {
-            func_ptr: src,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        }
+
+        PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
     }
 }
 
