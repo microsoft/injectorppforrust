@@ -14,23 +14,23 @@ pub(crate) struct WhenCalled {
 }
 
 impl WhenCalled {
-    pub(crate) fn new(func: *const ()) -> Self {
+    pub(crate) fn new(func: FuncPtrInternal) -> Self {
         Self {
-            func_ptr: func as *mut u8,
+            func_ptr: func.as_ptr() as *mut u8,
         }
     }
 
     /// Patches the target function so that it branches to a JIT block that uses an absolute jump
     /// to call the target function.
-    pub(crate) fn will_execute_guard(self, target: *const ()) -> PatchGuard {
+    pub(crate) fn will_execute_guard(self, target: FuncPtrInternal) -> PatchGuard {
         #[cfg(target_arch = "aarch64")]
         {
-            PatchArm64::replace_function_with_other_function(self.func_ptr, target)
+            PatchArm64::replace_function_with_other_function(self.func_ptr, target.as_ptr())
         }
 
         #[cfg(target_arch = "x86_64")]
         {
-            PatchAmd64::replace_function_with_other_function(self.func_ptr, target)
+            PatchAmd64::replace_function_with_other_function(self.func_ptr, target.as_ptr())
         }
     }
 

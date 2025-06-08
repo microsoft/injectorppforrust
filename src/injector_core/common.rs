@@ -1,11 +1,40 @@
 use libc::*;
 use std::ptr;
+use std::ptr::NonNull;
 
 #[cfg(target_os = "windows")]
 use crate::injector_core::winapi::*;
 
 #[cfg(target_os = "linux")]
 use crate::injector_core::linuxapi::*;
+
+/// A safe wrapper around a raw function pointer.
+///
+/// `FuncPtrInternal` encapsulates a non-null function pointer and provides safe
+/// creation and access methods. It's used throughout injectorpp
+/// to represent both original functions to be mocked and their replacement
+/// implementations.
+///
+/// # Safety
+///
+/// The caller must ensure that the pointer is valid and points to a function.
+pub(crate) struct FuncPtrInternal(NonNull<()>);
+
+impl FuncPtrInternal {
+    /// Creates a new `FuncPtrInternal` from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the pointer is valid and points to a function.
+    pub(crate) unsafe fn new(non_null_ptr: NonNull<()>) -> Self {
+        FuncPtrInternal(non_null_ptr)
+    }
+
+    /// Returns the raw pointer to the function.
+    pub(crate) fn as_ptr(&self) -> *const () {
+        self.0.as_ptr()
+    }
+}
 
 /// Allocates a block of executable memory near the provided source address,
 /// ensuring that the allocated memory lies within ±128MB of the source.

@@ -479,7 +479,12 @@ impl Drop for CallCountVerifier {
 /// # Safety
 ///
 /// The caller must ensure that the pointer is valid and points to a function.
-pub struct FuncPtr(NonNull<()>);
+pub struct FuncPtr {
+    /// The internal representation of the function pointer.
+    ///
+    /// This is a wrapper around a non-null pointer to ensure safety.
+    func_ptr_internal: FuncPtrInternal,
+}
 
 impl FuncPtr {
     /// Creates a new `FuncPtr` from a raw pointer.
@@ -494,12 +499,9 @@ impl FuncPtr {
         let p = ptr as *mut ();
         let nn = NonNull::new(p).expect("Pointer must not be null");
 
-        FuncPtr(nn)
-    }
-
-    /// Returns the raw pointer to the function.
-    fn as_ptr(&self) -> *const () {
-        self.0.as_ptr()
+        Self {
+            func_ptr_internal: FuncPtrInternal::new(nn),
+        }
     }
 }
 
@@ -572,7 +574,7 @@ impl InjectorPP {
     /// assert!(Path::new("/non/existent/path").exists());
     /// ```
     pub fn when_called(&mut self, func: FuncPtr) -> WhenCalledBuilder<'_> {
-        let when = WhenCalled::new(func.as_ptr());
+        let when = WhenCalled::new(func.func_ptr_internal);
         WhenCalledBuilder { lib: self, when }
     }
 
@@ -613,7 +615,7 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(func!(poll_fn).as_ptr());
+        let when = WhenCalled::new(func!(poll_fn).func_ptr_internal);
         WhenCalledBuilderAsync { lib: self, when }
     }
 }
@@ -675,7 +677,7 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
-        let guard = self.when.will_execute_guard(target.as_ptr());
+        let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
     }
 
@@ -787,7 +789,7 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub fn will_return_async(self, target: FuncPtr) {
-        let guard = self.when.will_execute_guard(target.as_ptr());
+        let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
     }
 }
