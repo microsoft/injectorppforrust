@@ -16,20 +16,20 @@ use std::task::Poll;
 /// When panic happens in the multi thread scenario, the std Mutex will cause poison error.
 /// This will fail other unrelated test cases. The test failure accuracy is
 /// more important to users so ignore the poison error.
-pub struct NoPoisonMutex<T> {
+struct NoPoisonMutex<T> {
     inner: Mutex<T>,
 }
 
 impl<T> NoPoisonMutex<T> {
     /// Create a new mutex.
-    pub const fn new(value: T) -> Self {
+    const fn new(value: T) -> Self {
         Self {
             inner: Mutex::new(value),
         }
     }
 
     /// Lock, recovering if the mutex was poisoned.
-    pub fn lock(&self) -> MutexGuard<'_, T> {
+    fn lock(&self) -> MutexGuard<'_, T> {
         match self.inner.lock() {
             Ok(guard) => guard,
             Err(poisoned) => {

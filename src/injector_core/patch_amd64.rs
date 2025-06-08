@@ -3,7 +3,7 @@
 use crate::injector_core::common::*;
 use crate::injector_core::patch_trait::*;
 
-pub struct PatchAmd64;
+pub(crate) struct PatchAmd64;
 
 impl PatchTrait for PatchAmd64 {
     fn replace_function_with_other_function(src: *mut u8, target: *const ()) -> PatchGuard {
@@ -34,13 +34,7 @@ impl PatchTrait for PatchAmd64 {
             patch_function(src, &branch_code);
         }
 
-        PatchGuard {
-            func_ptr: src,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        }
+        PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
     }
 
     fn replace_function_return_boolean(src: *mut u8, value: bool) -> PatchGuard {
@@ -61,13 +55,7 @@ impl PatchTrait for PatchAmd64 {
             patch_function(src, &branch_code);
         }
 
-        PatchGuard {
-            func_ptr: src,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        }
+        PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
     }
 }
 
