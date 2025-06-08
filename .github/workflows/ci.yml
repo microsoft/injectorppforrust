@@ -18,6 +18,8 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
     name: Build & test on ${{ matrix.os }} / ${{ matrix.target }}
@@ -25,19 +27,29 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: actions-rs/toolchain@v1
+      - name: Debug PATH
+        shell: bash
+        run: echo $PATH
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          override: true
+          components: clippy, rustfmt
+          target: aarch64-pc-windows-msvc
+
+      - name: Verify Cargo Installation
+        shell: bash
+        run: cargo --version
 
       # Install QEMU only for Linux ARM64
       - name: Set up QEMU
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         uses: docker/setup-qemu-action@v3
 
-      # Install cross for ARM64 targets
-      - name: Install cross for ARM64 targets
-        if: contains(matrix.target, 'aarch64')
+      # Install cross for Linux ARM64 targets
+      - name: Install cross for Linux ARM64 targets
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: cargo install cross --force
 
       # Add Rust target for all targets
