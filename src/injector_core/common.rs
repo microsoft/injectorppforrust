@@ -10,7 +10,7 @@ use crate::injector_core::linuxapi::*;
 /// Allocates a block of executable memory near the provided source address,
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
-pub fn allocate_jit_memory(src: *const u8, code_size: usize) -> *mut u8 {
+pub(crate) fn allocate_jit_memory(src: *const u8, code_size: usize) -> *mut u8 {
     #[cfg(target_os = "linux")]
     {
         allocate_jit_memory_linux(src, code_size)
@@ -106,7 +106,7 @@ fn allocate_jit_memory_windows(src: *const u8, code_size: usize) -> *mut u8 {
 /// # Safety
 ///
 /// The caller must ensure that `ptr` is valid for reading `len` bytes.
-pub unsafe fn read_bytes(ptr: *const u8, len: usize) -> Vec<u8> {
+pub(crate) unsafe fn read_bytes(ptr: *const u8, len: usize) -> Vec<u8> {
     let mut buf = vec![0u8; len];
     ptr::copy_nonoverlapping(ptr, buf.as_mut_ptr(), len);
     buf
@@ -114,14 +114,32 @@ pub unsafe fn read_bytes(ptr: *const u8, len: usize) -> Vec<u8> {
 
 /// A guard that stores the original bytes of a patched function and the allocated JIT memory.
 /// When dropped, it restores the original function code and frees the JIT memory.
-pub struct PatchGuard {
-    pub func_ptr: *mut u8,
-    pub original_bytes: Vec<u8>,
-    pub patch_size: usize,
-    pub jit_memory: *mut u8,
+pub(crate) struct PatchGuard {
+    func_ptr: *mut u8,
+    original_bytes: Vec<u8>,
+    patch_size: usize,
+    jit_memory: *mut u8,
 
     #[cfg_attr(target_os = "windows", allow(dead_code))]
-    pub jit_size: usize,
+    jit_size: usize,
+}
+
+impl PatchGuard {
+    pub(crate) fn new(
+        func_ptr: *mut u8,
+        original_bytes: Vec<u8>,
+        patch_size: usize,
+        jit_memory: *mut u8,
+        jit_size: usize,
+    ) -> Self {
+        Self {
+            func_ptr,
+            original_bytes,
+            patch_size,
+            jit_memory,
+            jit_size,
+        }
+    }
 }
 
 impl Drop for PatchGuard {
@@ -151,7 +169,7 @@ impl Drop for PatchGuard {
 /// # Safety
 ///
 /// The caller must ensure that `func` points to a valid, patchable code region.
-pub unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
+pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
     make_memory_writable_and_executable(func);
 
     inject_asm_code(patch, func);
@@ -204,7 +222,7 @@ unsafe fn make_memory_writable_and_executable_windows(func: *const u8) {
     }
 }
 
-pub unsafe fn inject_asm_code(asm_code: &[u8], dest: *mut u8) {
+pub(crate) unsafe fn inject_asm_code(asm_code: &[u8], dest: *mut u8) {
     ptr::copy_nonoverlapping(asm_code.as_ptr(), dest, asm_code.len());
     clear_cache(dest, dest.add(asm_code.len()));
 }

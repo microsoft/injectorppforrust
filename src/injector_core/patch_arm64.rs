@@ -5,7 +5,7 @@ use crate::injector_core::common::*;
 use crate::injector_core::patch_trait::*;
 use crate::injector_core::utils::*;
 
-pub struct PatchArm64;
+pub(crate) struct PatchArm64;
 
 impl PatchTrait for PatchArm64 {
     fn replace_function_with_other_function(src: *mut u8, target: *const ()) -> PatchGuard {
@@ -29,13 +29,8 @@ impl PatchTrait for PatchArm64 {
         unsafe {
             patch_function(src, &patch);
         }
-        PatchGuard {
-            func_ptr: src,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        }
+
+        PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
     }
 
     fn replace_function_return_boolean(src: *mut u8, value: bool) -> PatchGuard {
@@ -59,13 +54,8 @@ impl PatchTrait for PatchArm64 {
         unsafe {
             patch_function(src, &patch);
         }
-        PatchGuard {
-            func_ptr: src,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        }
+
+        PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
     }
 }
 
@@ -133,7 +123,7 @@ fn generate_will_return_boolean_jit_code(jit_ptr: *mut u8, value: bool) {
     }
 }
 
-pub fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
+fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
     asm_code.push((instruction & 0xFF) as u8);
     asm_code.push(((instruction >> 8) & 0xFF) as u8);
     asm_code.push(((instruction >> 16) & 0xFF) as u8);

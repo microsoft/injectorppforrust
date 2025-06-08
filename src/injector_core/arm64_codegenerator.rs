@@ -5,14 +5,14 @@ use crate::injector_core::utils::*;
 // C6.2.220 RET
 // Return from subroutine branches unconditionally to an address in a register, with a hint that this is a subroutine return.
 // x30 is used to hold the address to be branched to.
-pub fn emit_ret_x30() -> [bool; 32] {
+pub(crate) fn emit_ret_x30() -> [bool; 32] {
     emit_ret(&u8_to_bits::<5>(30))
 }
 
 // C6.2.220 RET
 // Return from subroutine branches unconditionally to an address in a register,
 // with a hint that this is a subroutine return.
-pub fn emit_ret(register_name: &[bool; 5]) -> [bool; 32] {
+pub(crate) fn emit_ret(register_name: &[bool; 5]) -> [bool; 32] {
     let mut code_bits = [false; 32];
     let mut cur = 0;
 
@@ -102,7 +102,7 @@ pub fn emit_ret(register_name: &[bool; 5]) -> [bool; 32] {
 /// 9. 5 bits: 1,1,0,1,0  
 ///
 /// Total: 5 + 5 + 2 + 6 + 5 + 2 + 1 + 1 + 5 = 32 bits.
-pub fn emit_br(register_name: [bool; 5]) -> [bool; 32] {
+pub(crate) fn emit_br(register_name: [bool; 5]) -> [bool; 32] {
     let mut code_bits = [false; 32];
     let mut cur = 0;
 
@@ -174,7 +174,7 @@ pub fn emit_br(register_name: [bool; 5]) -> [bool; 32] {
 ///
 /// # Returns
 /// A 32-bit code represented as a [bool; 32].
-pub fn emit_movk_from_address(
+pub(crate) fn emit_movk_from_address(
     address: u64,
     start: usize,
     sf: bool,
@@ -204,7 +204,7 @@ pub fn emit_movk_from_address(
 ///
 /// # Returns
 /// A 32-bit code represented as a [bool; 32].
-pub fn emit_movk(
+pub(crate) fn emit_movk(
     value_bits: [bool; 16],
     sf: bool,
     hw: [bool; 2],
@@ -263,7 +263,7 @@ pub fn emit_movk(
 ///
 /// # Returns
 /// A 32-bit code represented as a [bool; 32].
-pub fn emit_movz_from_address(
+pub(crate) fn emit_movz_from_address(
     address: u64,
     start: usize,
     sf: bool,
@@ -293,7 +293,7 @@ pub fn emit_movz_from_address(
 ///
 /// # Returns
 /// A 32-bit instruction encoded as a [bool; 32].
-pub fn emit_movz(
+pub(crate) fn emit_movz(
     value_bits: [bool; 16],
     sf: bool,
     hw: [bool; 2],
