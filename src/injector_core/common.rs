@@ -1,5 +1,6 @@
 use libc::*;
 use std::ptr;
+use std::ptr::NonNull;
 
 #[cfg(target_os = "windows")]
 use crate::injector_core::winapi::*;
@@ -7,10 +8,38 @@ use crate::injector_core::winapi::*;
 #[cfg(target_os = "linux")]
 use crate::injector_core::linuxapi::*;
 
+/// A safe wrapper around a raw function pointer.
+///
+/// `FuncPtrInternal` encapsulates a non-null function pointer and provides safe
+/// creation and access methods. It's used throughout injectorpp
+/// to represent both original functions to be mocked and their replacement
+/// implementations.
+///
+/// # Safety
+///
+/// The caller must ensure that the pointer is valid and points to a function.
+pub(crate) struct FuncPtrInternal(NonNull<()>);
+
+impl FuncPtrInternal {
+    /// Creates a new `FuncPtrInternal` from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the pointer is valid and points to a function.
+    pub(crate) unsafe fn new(non_null_ptr: NonNull<()>) -> Self {
+        FuncPtrInternal(non_null_ptr)
+    }
+
+    /// Returns the raw pointer to the function.
+    pub(crate) fn as_ptr(&self) -> *const () {
+        self.0.as_ptr()
+    }
+}
+
 /// Allocates a block of executable memory near the provided source address,
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
-pub(crate) fn allocate_jit_memory(src: *const u8, code_size: usize) -> *mut u8 {
+pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(target_os = "linux")]
     {
         allocate_jit_memory_linux(src, code_size)
@@ -23,9 +52,9 @@ pub(crate) fn allocate_jit_memory(src: *const u8, code_size: usize) -> *mut u8 {
 }
 
 #[cfg(target_os = "linux")]
-fn allocate_jit_memory_linux(src: *const u8, code_size: usize) -> *mut u8 {
+fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     let max_range: u64 = 0x8000000; // 128MB
-    let original_addr = src as u64;
+    let original_addr = src.as_ptr() as u64;
     let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
     // Start at original_addr - max_range.
     let mut start_address = original_addr.saturating_sub(max_range);
@@ -61,9 +90,9 @@ fn allocate_jit_memory_linux(src: *const u8, code_size: usize) -> *mut u8 {
 }
 
 #[cfg(target_os = "windows")]
-fn allocate_jit_memory_windows(src: *const u8, code_size: usize) -> *mut u8 {
+fn allocate_jit_memory_windows(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     let max_range: u64 = 0x8000000; // 128MB
-    let original_addr = src as u64;
+    let original_addr = src.as_ptr() as u64;
     let page_size = unsafe { get_page_size() as u64 };
     let mut start_address = original_addr.saturating_sub(max_range);
 
