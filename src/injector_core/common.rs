@@ -47,14 +47,14 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
 
     #[cfg(target_os = "windows")]
     {
-        allocate_jit_memory_windows(src.as_ptr() as *const u8, code_size)
+        allocate_jit_memory_windows(src, code_size)
     }
 }
 
 #[cfg(target_os = "linux")]
-fn allocate_jit_memory_linux(src: *const u8, code_size: usize) -> *mut u8 {
+fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     let max_range: u64 = 0x8000000; // 128MB
-    let original_addr = src as u64;
+    let original_addr = src.as_ptr() as u64;
     let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
     // Start at original_addr - max_range.
     let mut start_address = original_addr.saturating_sub(max_range);
@@ -90,9 +90,9 @@ fn allocate_jit_memory_linux(src: *const u8, code_size: usize) -> *mut u8 {
 }
 
 #[cfg(target_os = "windows")]
-fn allocate_jit_memory_windows(src: *const u8, code_size: usize) -> *mut u8 {
+fn allocate_jit_memory_windows(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     let max_range: u64 = 0x8000000; // 128MB
-    let original_addr = src as u64;
+    let original_addr = src.as_ptr() as u64;
     let page_size = unsafe { get_page_size() as u64 };
     let mut start_address = original_addr.saturating_sub(max_range);
 
