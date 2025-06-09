@@ -8,11 +8,11 @@ use crate::injector_core::utils::*;
 pub(crate) struct PatchArm64;
 
 impl PatchTrait for PatchArm64 {
-    fn replace_function_with_other_function(src: *mut u8, target: *const ()) -> PatchGuard {
+    fn replace_function_with_other_function(src: FuncPtrInternal, target: *const ()) -> PatchGuard {
         let patch_size = 12;
         let original_bytes = unsafe { read_bytes(src, patch_size) };
         let jit_size = 20;
-        let jit_memory = allocate_jit_memory(src, jit_size);
+        let jit_memory = allocate_jit_memory(&src, jit_size);
         generate_will_execute_jit_code_abs(jit_memory, target);
         let func_addr = src as usize;
         let jit_addr = jit_memory as usize;
@@ -33,11 +33,11 @@ impl PatchTrait for PatchArm64 {
         PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
     }
 
-    fn replace_function_return_boolean(src: *mut u8, value: bool) -> PatchGuard {
+    fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard {
         let patch_size = 12;
         let original_bytes = unsafe { read_bytes(src, patch_size) };
         let jit_size = 8;
-        let jit_memory = allocate_jit_memory(src, jit_size);
+        let jit_memory = allocate_jit_memory(&src, jit_size);
         generate_will_return_boolean_jit_code(jit_memory, value);
         let func_addr = src as usize;
         let jit_addr = jit_memory as usize;
