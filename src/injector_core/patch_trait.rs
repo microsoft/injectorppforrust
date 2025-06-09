@@ -5,5 +5,6 @@ pub(crate) trait PatchTrait {
         src: FuncPtrInternal,
         target: FuncPtrInternal,
     ) -> PatchGuard;
-    fn replace_function_return_boolean(src: *mut u8, value: bool) -> PatchGuard;
+
+    fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard;
 }

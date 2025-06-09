@@ -41,7 +41,7 @@ impl WhenCalled {
 
         #[cfg(target_arch = "x86_64")]
         {
-            PatchAmd64::replace_function_return_boolean(self.func_ptr.as_ptr() as *mut u8, value)
+            PatchAmd64::replace_function_return_boolean(self.func_ptr, value)
         }
     }
 }

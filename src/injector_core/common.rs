@@ -39,7 +39,7 @@ impl FuncPtrInternal {
 /// Allocates a block of executable memory near the provided source address,
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
-pub(crate) fn allocate_jit_memory(src: *const u8, code_size: usize) -> *mut u8 {
+pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(target_os = "linux")]
     {
         allocate_jit_memory_linux(src, code_size)
@@ -47,7 +47,7 @@ pub(crate) fn allocate_jit_memory(src: *const u8, code_size: usize) -> *mut u8 {
 
     #[cfg(target_os = "windows")]
     {
-        allocate_jit_memory_windows(src, code_size)
+        allocate_jit_memory_windows(src.as_ptr() as *const u8, code_size)
     }
 }
 

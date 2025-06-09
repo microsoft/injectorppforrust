@@ -12,7 +12,7 @@ impl PatchTrait for PatchAmd64 {
     ) -> PatchGuard {
         // The code size is maximum 12 bytes because only a jmp instruction is needed.
         let jit_size = 12;
-        let jit_memory = allocate_jit_memory(src.as_ptr() as *mut u8, jit_size);
+        let jit_memory = allocate_jit_memory(&src, jit_size);
 
         let target_addr = target.as_ptr() as usize;
         let jit_addr = jit_memory as usize;
@@ -37,28 +37,40 @@ impl PatchTrait for PatchAmd64 {
             patch_function(src.as_ptr() as *mut u8, &branch_code);
         }
 
-        PatchGuard::new(src.as_ptr() as *mut u8, original_bytes, patch_size, jit_memory, jit_size)
+        PatchGuard::new(
+            src.as_ptr() as *mut u8,
+            original_bytes,
+            patch_size,
+            jit_memory,
+            jit_size,
+        )
     }
 
-    fn replace_function_return_boolean(src: *mut u8, value: bool) -> PatchGuard {
+    fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard {
         let jit_size = 8;
-        let jit_memory = allocate_jit_memory(src, jit_size);
+        let jit_memory = allocate_jit_memory(&src, jit_size);
 
         generate_will_return_boolean_jit_code(jit_memory, value);
 
-        let func_addr = src as usize;
+        let func_addr = src.as_ptr() as usize;
         let jit_addr = jit_memory as usize;
 
         let branch_code = generate_branch_to_target_function(func_addr, jit_addr);
 
         let patch_size = branch_code.len();
-        let original_bytes = unsafe { read_bytes(src, patch_size) };
+        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, patch_size) };
 
         unsafe {
-            patch_function(src, &branch_code);
+            patch_function(src.as_ptr() as *mut u8, &branch_code);
         }
 
-        PatchGuard::new(src, original_bytes, patch_size, jit_memory, jit_size)
+        PatchGuard::new(
+            src.as_ptr() as *mut u8,
+            original_bytes,
+            patch_size,
+            jit_memory,
+            jit_size,
+        )
     }
 }
 
