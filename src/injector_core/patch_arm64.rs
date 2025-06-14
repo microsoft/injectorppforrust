@@ -5,16 +5,19 @@ use crate::injector_core::common::*;
 use crate::injector_core::patch_trait::*;
 use crate::injector_core::utils::*;
 
-pub struct PatchArm64;
+pub(crate) struct PatchArm64;
 
 impl PatchTrait for PatchArm64 {
-    fn replace_function_with_other_function(src: *mut u8, target: *const ()) -> PatchGuard {
+    fn replace_function_with_other_function(
+        src: FuncPtrInternal,
+        target: FuncPtrInternal,
+    ) -> PatchGuard {
         let patch_size = 12;
-        let original_bytes = unsafe { read_bytes(src, patch_size) };
+        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, patch_size) };
         let jit_size = 20;
-        let jit_memory = allocate_jit_memory(src, jit_size);
-        generate_will_execute_jit_code_abs(jit_memory, target);
-        let func_addr = src as usize;
+        let jit_memory = allocate_jit_memory(&src, jit_size);
+        generate_will_execute_jit_code_abs(jit_memory, target.as_ptr());
+        let func_addr = src.as_ptr() as usize;
         let jit_addr = jit_memory as usize;
         let offset = (jit_addr as isize - func_addr as isize) / 4;
         if !(-33554432..=33554431).contains(&offset) {
@@ -27,24 +30,25 @@ impl PatchTrait for PatchArm64 {
         patch[4..8].copy_from_slice(&nop.to_le_bytes());
         patch[8..12].copy_from_slice(&nop.to_le_bytes());
         unsafe {
-            patch_function(src, &patch);
+            patch_function(src.as_ptr() as *mut u8, &patch);
         }
-        PatchGuard {
-            func_ptr: src,
+
+        PatchGuard::new(
+            src.as_ptr() as *mut u8,
             original_bytes,
             patch_size,
             jit_memory,
             jit_size,
-        }
+        )
     }
 
-    fn replace_function_return_boolean(src: *mut u8, value: bool) -> PatchGuard {
+    fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard {
         let patch_size = 12;
-        let original_bytes = unsafe { read_bytes(src, patch_size) };
+        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, patch_size) };
         let jit_size = 8;
-        let jit_memory = allocate_jit_memory(src, jit_size);
+        let jit_memory = allocate_jit_memory(&src, jit_size);
         generate_will_return_boolean_jit_code(jit_memory, value);
-        let func_addr = src as usize;
+        let func_addr = src.as_ptr() as usize;
         let jit_addr = jit_memory as usize;
         let offset = (jit_addr as isize - func_addr as isize) / 4;
         if !(-33554432..=33554431).contains(&offset) {
@@ -57,15 +61,16 @@ impl PatchTrait for PatchArm64 {
         patch[4..8].copy_from_slice(&nop.to_le_bytes());
         patch[8..12].copy_from_slice(&nop.to_le_bytes());
         unsafe {
-            patch_function(src, &patch);
+            patch_function(src.as_ptr() as *mut u8, &patch);
         }
-        PatchGuard {
-            func_ptr: src,
+
+        PatchGuard::new(
+            src.as_ptr() as *mut u8,
             original_bytes,
             patch_size,
             jit_memory,
             jit_size,
-        }
+        )
     }
 }
 
@@ -133,7 +138,7 @@ fn generate_will_return_boolean_jit_code(jit_ptr: *mut u8, value: bool) {
     }
 }
 
-pub fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
+fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
     asm_code.push((instruction & 0xFF) as u8);
     asm_code.push(((instruction >> 8) & 0xFF) as u8);
     asm_code.push(((instruction >> 16) & 0xFF) as u8);

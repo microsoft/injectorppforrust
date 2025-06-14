@@ -9,20 +9,18 @@ use super::patch_amd64::PatchAmd64;
 use super::patch_trait::PatchTrait;
 
 /// An internal builder for patching a function. Not exposed publicly.
-pub struct WhenCalled {
-    func_ptr: *mut u8,
+pub(crate) struct WhenCalled {
+    func_ptr: FuncPtrInternal,
 }
 
 impl WhenCalled {
-    pub fn new(func: *const ()) -> Self {
-        Self {
-            func_ptr: func as *mut u8,
-        }
+    pub(crate) fn new(func: FuncPtrInternal) -> Self {
+        Self { func_ptr: func }
     }
 
     /// Patches the target function so that it branches to a JIT block that uses an absolute jump
     /// to call the target function.
-    pub fn will_execute_guard(self, target: *const ()) -> PatchGuard {
+    pub(crate) fn will_execute_guard(self, target: FuncPtrInternal) -> PatchGuard {
         #[cfg(target_arch = "aarch64")]
         {
             PatchArm64::replace_function_with_other_function(self.func_ptr, target)
@@ -35,7 +33,7 @@ impl WhenCalled {
     }
 
     /// Patches the target function so that it branches to a JIT block that returns the specified boolean.
-    pub fn will_return_boolean_guard(self, value: bool) -> PatchGuard {
+    pub(crate) fn will_return_boolean_guard(self, value: bool) -> PatchGuard {
         #[cfg(target_arch = "aarch64")]
         {
             PatchArm64::replace_function_return_boolean(self.func_ptr, value)

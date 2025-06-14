@@ -291,7 +291,7 @@
 //! use injectorpp::interface::injector::*;
 //! use std::sync::atomic::{AtomicU32, Ordering};
 //!
-//! pub fn func_no_return() {}
+//! pub fn func_no_return() { panic!(); }
 //!
 //! static CALL_COUNT_CLOSURE: AtomicU32 = AtomicU32::new(0);
 //! let fake_closure = || {
