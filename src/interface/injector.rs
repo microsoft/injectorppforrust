@@ -519,6 +519,7 @@ pub struct InjectorPP {
     guards: Vec<PatchGuard>,
     verifiers: Vec<CallCountVerifier>,
     _lock: MutexGuard<'static, ()>,
+    leak_jit_memory: bool,
 }
 
 impl InjectorPP {
@@ -541,6 +542,7 @@ impl InjectorPP {
             guards: Vec::new(),
             verifiers: Vec::new(),
             _lock: lock,
+            leak_jit_memory: false,
         }
     }
 
@@ -618,6 +620,15 @@ impl InjectorPP {
         let when = WhenCalled::new(func!(poll_fn).func_ptr_internal);
         WhenCalledBuilderAsync { lib: self, when }
     }
+
+    /// Call this to leak all JIT memory for the lifetime of this Injectorpp instance.
+    /// This is usually used for preventing race conditions in multi thread scenarios.
+    ///
+    /// By default, injectorpp frees each JIT memory when the patch is undone.
+    pub fn leak_jit_memory(&mut self) -> &mut Self {
+        self.leak_jit_memory = true;
+        self
+    }
 }
 
 impl Default for InjectorPP {
@@ -677,7 +688,8 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
-        let guard = self.when.will_execute_guard(target.func_ptr_internal);
+        let mut guard = self.when.will_execute_guard(target.func_ptr_internal);
+        guard.set_leak_jit_memory(self.lib.leak_jit_memory);
         self.lib.guards.push(guard);
     }
 
@@ -742,7 +754,8 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_return_boolean(self, value: bool) {
-        let guard = self.when.will_return_boolean_guard(value);
+        let mut guard = self.when.will_return_boolean_guard(value);
+        guard.set_leak_jit_memory(self.lib.leak_jit_memory);
         self.lib.guards.push(guard);
     }
 }
@@ -789,7 +802,8 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub fn will_return_async(self, target: FuncPtr) {
-        let guard = self.when.will_execute_guard(target.func_ptr_internal);
+        let mut guard = self.when.will_execute_guard(target.func_ptr_internal);
+        guard.set_leak_jit_memory(self.lib.leak_jit_memory);
         self.lib.guards.push(guard);
     }
 }

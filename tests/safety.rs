@@ -49,3 +49,29 @@ async fn test_will_return_async_null_pointer_should_panic() {
         )))
         .will_return_async(unsafe { FuncPtr::new(std::ptr::null()) });
 }
+
+#[test]
+fn test_multi_thread_scenario() {
+    // fire off a worker that continuously calls `foo()`
+    std::thread::spawn(|| loop {
+        foo();
+    });
+
+    // Do a finite number of patch/unpatch cycles—if none of these crash,
+    // our multi-thread “race” is safe.
+    const ITERATIONS: usize = 1000;
+    for _ in 0..ITERATIONS {
+        let mut injector = InjectorPP::new();
+        injector
+            .leak_jit_memory()
+            .when_called(injectorpp::func!(foo))
+            .will_execute_raw(injectorpp::closure!(
+                || {
+                    print!("temp\n");
+                },
+                fn()
+            ));
+    }
+
+    // If we get here without a crash, the test passes
+}

@@ -151,6 +151,8 @@ pub(crate) struct PatchGuard {
 
     #[cfg_attr(target_os = "windows", allow(dead_code))]
     jit_size: usize,
+
+    leak_jit_memory: bool,
 }
 
 impl PatchGuard {
@@ -167,7 +169,13 @@ impl PatchGuard {
             patch_size,
             jit_memory,
             jit_size,
+            leak_jit_memory: false,
         }
+    }
+
+    /// configure whether to free the JIT memory on drop
+    pub(crate) fn set_leak_jit_memory(&mut self, leak: bool) {
+        self.leak_jit_memory = leak;
     }
 }
 
@@ -175,7 +183,7 @@ impl Drop for PatchGuard {
     fn drop(&mut self) {
         unsafe {
             patch_function(self.func_ptr, &self.original_bytes[..self.patch_size]);
-            if !self.jit_memory.is_null() {
+            if !self.jit_memory.is_null() && !self.leak_jit_memory {
                 #[cfg(target_os = "linux")]
                 {
                     libc::munmap(self.jit_memory as *mut c_void, self.jit_size);
