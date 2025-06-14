@@ -69,8 +69,7 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            echo "Skipping test run on aarch64 due to QEMU SIGILL limitations."
-            cross test --target ${{ matrix.target }} --no-run
+            cross test --target ${{ matrix.target }} -- --nocapture
           else
             cargo test --target ${{ matrix.target }} -- --nocapture
           fi
