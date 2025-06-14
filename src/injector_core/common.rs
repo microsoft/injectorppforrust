@@ -61,12 +61,13 @@ fn allocate_jit_memory_unix(src: &FuncPtrInternal, code_size: usize) -> *mut u8 
     let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
     // Start at original_addr - max_range.
     let mut start_address = original_addr.saturating_sub(max_range);
-    let flags = if cfg!(target_os = "macos") {
-        // Allows the binary to create memory that is both writable and executable.
-        libc::MAP_ANONYMOUS | libc::MAP_PRIVATE | libc::MAP_JIT
-    } else {
-        libc::MAP_ANONYMOUS | libc::MAP_PRIVATE
-    };
+
+    #[cfg(target_os = "macos")]
+    // Allows the binary to create memory that is both writable and executable.
+    let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE | libc::MAP_JIT;
+
+    #[cfg(target_os = "linux")]
+    let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
 
     loop {
         let ptr = unsafe {
