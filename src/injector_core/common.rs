@@ -8,6 +8,9 @@ use crate::injector_core::winapi::*;
 #[cfg(target_os = "linux")]
 use crate::injector_core::linuxapi::*;
 
+#[cfg(target_os = "macos")]
+use crate::injector_core::macosapi::*;
+
 /// A safe wrapper around a raw function pointer.
 ///
 /// `FuncPtrInternal` encapsulates a non-null function pointer and provides safe
@@ -40,9 +43,9 @@ impl FuncPtrInternal {
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
 pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        allocate_jit_memory_linux(src, code_size)
+        allocate_jit_memory_unix(src, code_size)
     }
 
     #[cfg(target_os = "windows")]
@@ -51,20 +54,28 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
     }
 }
 
-#[cfg(target_os = "linux")]
-fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn allocate_jit_memory_unix(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     let max_range: u64 = 0x8000000; // 128MB
     let original_addr = src.as_ptr() as u64;
     let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
     // Start at original_addr - max_range.
     let mut start_address = original_addr.saturating_sub(max_range);
+
+    #[cfg(target_os = "macos")]
+    // Allows the binary to create memory that is both writable and executable.
+    let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE | libc::MAP_JIT;
+
+    #[cfg(target_os = "linux")]
+    let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
+
     loop {
         let ptr = unsafe {
             libc::mmap(
                 start_address as *mut c_void,
                 code_size,
                 PROT_READ | PROT_WRITE | PROT_EXEC,
-                libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+                flags,
                 -1,
                 0,
             )
@@ -176,7 +187,7 @@ impl Drop for PatchGuard {
         unsafe {
             patch_function(self.func_ptr, &self.original_bytes[..self.patch_size]);
             if !self.jit_memory.is_null() {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
                 {
                     libc::munmap(self.jit_memory as *mut c_void, self.jit_size);
                 }
@@ -205,7 +216,7 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
 }
 
 unsafe fn make_memory_writable_and_executable(func: *mut u8) {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         make_memory_writable_and_executable_linux(func);
     }
@@ -216,11 +227,12 @@ unsafe fn make_memory_writable_and_executable(func: *mut u8) {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 unsafe fn make_memory_writable_and_executable_linux(func: *mut u8) {
     let page_size = sysconf(_SC_PAGESIZE) as usize;
     let addr = func as usize;
     let page_start = addr & !(page_size - 1);
+
     if libc::mprotect(
         page_start as *mut c_void,
         page_size,
@@ -271,6 +283,12 @@ unsafe fn clear_cache(start: *mut u8, end: *mut u8) {
         if success == 0 {
             panic!("FlushInstructionCache failed");
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let size = end.offset_from(start) as usize;
+        sys_icache_invalidate(start, size);
     }
 
     // On ARM64, explicitly synchronize the CPU pipeline.
