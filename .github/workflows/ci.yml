@@ -14,7 +14,7 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -42,16 +42,6 @@ jobs:
         shell: bash
         run: cargo --version
 
-      # Install QEMU only for Linux ARM64
-      - name: Set up QEMU
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        uses: docker/setup-qemu-action@v3
-
-      # Install cross for Linux ARM64 targets
-      - name: Install cross for Linux ARM64 targets
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cargo install cross --force
-
       # Add Rust target for all targets
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
@@ -59,17 +49,9 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            cross build --target ${{ matrix.target }} --release
-          else
             cargo build --target ${{ matrix.target }} --release
-          fi
 
       - name: Test
         shell: bash
         run: |
-          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            cross test --target ${{ matrix.target }} -- --nocapture
-          else
             cargo test --target ${{ matrix.target }} -- --nocapture
-          fi
