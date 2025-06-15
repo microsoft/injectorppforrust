@@ -49,9 +49,9 @@ jobs:
       - name: Build
         shell: bash
         run: |
-            cargo build --target ${{ matrix.target }} --release
+          cargo build --target ${{ matrix.target }} --release
 
       - name: Test
         shell: bash
         run: |
-            cargo test --target ${{ matrix.target }} -- --nocapture
+          cargo test --target ${{ matrix.target }} -- --nocapture
