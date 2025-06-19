@@ -5,6 +5,10 @@ use crate::injector_core::patch_trait::*;
 
 pub(crate) struct PatchAmd64;
 
+const JMP_REL_OPCODE: u8 = 0xE9;
+const MOV_RAX_OPCODE: [u8; 2] = [0x48, 0xB8];
+const JMP_RAX_OPCODE: [u8; 2] = [0xFF, 0xE0];
+
 impl PatchTrait for PatchAmd64 {
     fn replace_function_with_other_function(
         src: FuncPtrInternal,
@@ -92,34 +96,20 @@ fn generate_will_return_boolean_jit_code(jit_ptr: *mut u8, value: bool) {
 }
 
 fn generate_branch_to_target_function(ori_func: usize, target_func: usize) -> Vec<u8> {
-    let mut branch_code: Vec<u8> = Vec::new();
-
-    // +5 for 1-byte opcode + 4-byte offset
     let offset = target_func as isize - (ori_func as isize + 5);
 
-    if offset <= i32::MAX as isize && offset >= i32::MIN as isize {
-        // Use the 32-bit relative JMP
-        branch_code.push(0xE9);
-        let mut offset_u32 = offset as u32;
-        for _ in 0..4 {
-            branch_code.push((offset_u32 & 0xFF) as u8);
-            offset_u32 >>= 8;
-        }
+    if offset >= i32::MIN as isize && offset <= i32::MAX as isize {
+        // Emit: jmp rel32 (5 bytes)
+        let mut branch_code = Vec::with_capacity(5);
+        branch_code.push(JMP_REL_OPCODE);
+        branch_code.extend_from_slice(&(offset as i32).to_le_bytes());
+        branch_code
     } else {
-        let mut target = target_func;
-
-        // mov rax, targetFunc
-        branch_code.push(0x48);
-        branch_code.push(0xB8);
-        for _ in 0..8 {
-            branch_code.push((target & 0xFF) as u8);
-            target >>= 8;
-        }
-
-        // jmp rax
-        branch_code.push(0xFF);
-        branch_code.push(0xE0);
+        // Emit: mov rax, imm64 + jmp rax (13 bytes)
+        let mut branch_code = Vec::with_capacity(13);
+        branch_code.extend_from_slice(&MOV_RAX_OPCODE);
+        branch_code.extend_from_slice(&(target_func as u64).to_le_bytes());
+        branch_code.extend_from_slice(&JMP_RAX_OPCODE);
+        branch_code
     }
-
-    branch_code
 }
