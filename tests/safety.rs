@@ -22,7 +22,7 @@ fn test_will_execute_raw_null_pointer_should_panic() {
 fn test_will_execute_null_pointer_should_panic() {
     let mut injector = InjectorPP::new();
     injector.when_called(injectorpp::func!(foo)).will_execute((
-        unsafe { FuncPtr::new(std::ptr::null()) },
+        unsafe { FuncPtr::new(std::ptr::null(), type_id_val(&foo)) },
         CallCountVerifier::Dummy,
     ));
 }
@@ -47,5 +47,10 @@ async fn test_will_return_async_null_pointer_should_panic() {
         .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_one(
             u32::default()
         )))
-        .will_return_async(unsafe { FuncPtr::new(std::ptr::null()) });
+        .will_return_async(unsafe {
+            FuncPtr::new(
+                std::ptr::null(),
+                type_id_val(&simple_async_func_u32_add_one),
+            )
+        });
 }
