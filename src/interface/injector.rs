@@ -1,7 +1,6 @@
 use crate::injector_core::common::*;
 use crate::injector_core::internal::*;
 
-use std::any::TypeId;
 use std::future::Future;
 use std::pin::Pin;
 use std::ptr::NonNull;
@@ -41,16 +40,6 @@ impl<T> NoPoisonMutex<T> {
     }
 }
 
-// Helper to grab the TypeId of any T
-pub fn type_id_of<T: 'static>() -> TypeId {
-    TypeId::of::<T>()
-}
-
-// Helper to grab the TypeId of the *value*’s type
-pub fn type_id_val<T: 'static>(_: &T) -> TypeId {
-    TypeId::of::<T>()
-}
-
 static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 
 /// Converts a function to a `FuncPtr`.
@@ -69,42 +58,21 @@ static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
-    ($f:ident :: <$($gen:ty),*>) => {{
-        let fn_val = $f::<$($gen),*>;
-        let ptr    = fn_val as *const ();
-
-        // ask TypeId for the *value*’s type:
-        let tid = type_id_val(&fn_val);
-        unsafe { FuncPtr::new(ptr, tid) }
-    }};
-
-    // Case 2: Non-generic function
-    ($f:expr) => {{
-        let fn_val = $f;
-        let ptr    = fn_val as *const ();
-        let tid    = type_id_val(&fn_val);
-        unsafe { FuncPtr::new(ptr, tid) }
-    }};
-}
-
-#[macro_export]
-macro_rules! func_with_type {
-    // Case 1: Generic function — provide function name and types separately
     ($f:ident :: <$($gen:ty),*>, $fn_type:ty) => {{
         let fn_val:$fn_type = $f::<$($gen),*>;
         let ptr = fn_val as *const ();
 
         // ask TypeId for the *value*’s type:
-        let tid = type_id_val(&fn_val);
-        unsafe { FuncPtr::new(ptr, tid) }
+        let sig = std::any::type_name_of_val(&fn_val);
+        unsafe { FuncPtr::new(ptr, sig) }
     }};
 
     // Case 2: Non-generic function
     ($f:expr, $fn_type:ty) => {{
         let fn_val:$fn_type = $f;
         let ptr    = fn_val as *const ();
-        let tid    = type_id_val(&fn_val);
-        unsafe { FuncPtr::new(ptr, tid) }
+        let sig    = std::any::type_name_of_val(&fn_val);
+        unsafe { FuncPtr::new(ptr, sig) }
     }};
 }
 
@@ -128,10 +96,10 @@ macro_rules! func_with_type {
 #[macro_export]
 macro_rules! closure {
     ($closure:expr, $fn_type:ty) => {{
-        let fn_ptr: $fn_type = $closure;
-        let tid = type_id_of::<$fn_type>();
+        let fn_val: $fn_type = $closure;
+        let sig = std::any::type_name_of_val(&fn_val);
 
-        unsafe { FuncPtr::new(fn_ptr as *const (), tid) }
+        unsafe { FuncPtr::new(fn_val as *const (), sig) }
     }};
 }
 
@@ -194,7 +162,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns (no times).
     (
@@ -214,7 +182,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times, but no assign.
     (
@@ -239,7 +207,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns (no times, no assign).
     (
@@ -257,7 +225,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns and times
     (
@@ -283,7 +251,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -302,7 +270,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times and returns
     (
@@ -326,7 +294,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns only.
     (
@@ -343,7 +311,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === UNIT RETURNING FUNCTIONS (-> ()) ===
@@ -371,7 +339,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -395,7 +363,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -413,7 +381,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
@@ -430,7 +398,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -456,7 +424,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -479,7 +447,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -491,7 +459,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 }
 
@@ -539,7 +507,7 @@ pub struct FuncPtr {
     ///
     /// This is a wrapper around a non-null pointer to ensure safety.
     func_ptr_internal: FuncPtrInternal,
-    type_id: TypeId,
+    signature: &'static str,
 }
 
 impl FuncPtr {
@@ -548,7 +516,7 @@ impl FuncPtr {
     /// # Safety
     ///
     /// The caller must ensure that the pointer is valid and points to a function.
-    pub unsafe fn new(ptr: *const (), type_id: TypeId) -> Self {
+    pub unsafe fn new(ptr: *const (), signature: &'static str) -> Self {
         // While these basic checks are performed, it is not a substitute for
         // proper function pointer validation. The caller must ensure that the
         // pointer is indeed a valid function pointer.
@@ -557,7 +525,7 @@ impl FuncPtr {
 
         Self {
             func_ptr_internal: FuncPtrInternal::new(nn),
-            type_id,
+            signature,
         }
     }
 }
@@ -635,7 +603,7 @@ impl InjectorPP {
         WhenCalledBuilder {
             lib: self,
             when,
-            expected_type_id: func.type_id,
+            expected_signature: func.signature,
         }
     }
 
@@ -671,12 +639,14 @@ impl InjectorPP {
     ///     assert_eq!(result, 123); // The patched value
     /// }
     /// ```
-    pub fn when_called_async<F, T: 'static>(&mut self, _: Pin<&mut F>) -> WhenCalledBuilderAsync<'_>
+    pub fn when_called_async<F, T>(&mut self, _: Pin<&mut F>) -> WhenCalledBuilderAsync<'_>
     where
-        F: Future<Output = T> + 'static,
+        F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(func!(poll_fn).func_ptr_internal);
+        let when = WhenCalled::new(
+            func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
+        );
         WhenCalledBuilderAsync { lib: self, when }
     }
 }
@@ -691,7 +661,7 @@ impl Default for InjectorPP {
 pub struct WhenCalledBuilder<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
-    expected_type_id: TypeId,
+    expected_signature: &'static str,
 }
 
 impl WhenCalledBuilder<'_> {
@@ -739,10 +709,10 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
-        if target.type_id != self.expected_type_id {
+        if target.signature != self.expected_signature {
             panic!(
                 "Signature mismatch: expected {:?} but got {:?}",
-                self.expected_type_id, target.type_id
+                self.expected_signature, target.signature
             );
         }
 
@@ -828,7 +798,7 @@ macro_rules! async_return {
             std::task::Poll::Ready($val)
         }
 
-        $crate::func!(generated_poll_fn)
+        $crate::func!(generated_poll_fn, fn() -> std::task::Poll<$ty>)
     }};
 }
 

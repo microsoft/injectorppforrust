@@ -19,7 +19,7 @@ fn test_will_return_boolean_when_in_scope_should_restore() {
     {
         let mut injector = InjectorPP::new();
         injector
-            .when_called(injectorpp::func!(returns_false_in_scope))
+            .when_called(injectorpp::func!(returns_false_in_scope, fn() -> bool))
             .will_return_boolean(true);
 
         let result = returns_false_in_scope();
@@ -35,7 +35,7 @@ fn test_will_return_boolean_when_in_scope_should_restore() {
 fn test_will_return_boolean_when_fake_return_true_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(returns_false))
+        .when_called(injectorpp::func!(returns_false, fn() -> bool))
         .will_return_boolean(true);
 
     let result = returns_false();
@@ -47,7 +47,7 @@ fn test_will_return_boolean_when_fake_return_true_should_success() {
 fn test_will_return_boolean_when_fake_return_false_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(returns_false))
+        .when_called(injectorpp::func!(returns_false, fn() -> bool))
         .will_return_boolean(false);
 
     let result = returns_false();
@@ -60,7 +60,8 @@ fn test_will_return_boolean_when_fake_complex_generic_function_multiple_types_sh
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func_return_false::<i32, bool, &str>
+            complex_generic_multiple_types_func_return_false::<i32, bool, &str>,
+            fn(i32, bool, &'static str) -> bool
         ))
         .will_return_boolean(true);
 

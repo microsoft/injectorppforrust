@@ -10,32 +10,13 @@ async fn simple_async_func_u32_add_one(x: u32) -> u32 {
 
 #[test]
 #[should_panic(expected = "Pointer must not be null")]
-fn test_will_execute_raw_null_pointer_should_panic() {
-    let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(foo))
-        .will_execute_raw(injectorpp::func!(std::ptr::null()));
-}
-
-#[test]
-#[should_panic(expected = "Pointer must not be null")]
 fn test_will_execute_null_pointer_should_panic() {
     let mut injector = InjectorPP::new();
-    injector.when_called(injectorpp::func!(foo)).will_execute((
-        unsafe { FuncPtr::new(std::ptr::null(), type_id_val(&foo)) },
-        CallCountVerifier::Dummy,
-    ));
-}
-
-#[test]
-#[should_panic(expected = "Pointer must not be null")]
-fn test_when_called_null_pointer_should_panic() {
-    let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(std::ptr::null()))
-        .will_execute(injectorpp::fake!(
-            func_type: fn() -> (),
-            returns: ()
+        .when_called(injectorpp::func!(foo, fn()))
+        .will_execute((
+            unsafe { FuncPtr::new(std::ptr::null(), std::any::type_name_of_val(&foo)) },
+            CallCountVerifier::Dummy,
         ));
 }
 
@@ -50,7 +31,7 @@ async fn test_will_return_async_null_pointer_should_panic() {
         .will_return_async(unsafe {
             FuncPtr::new(
                 std::ptr::null(),
-                type_id_val(&simple_async_func_u32_add_one),
+                std::any::type_name_of_val(&simple_async_func_u32_add_one),
             )
         });
 }
