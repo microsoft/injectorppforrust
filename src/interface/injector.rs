@@ -1,10 +1,10 @@
 use crate::injector_core::common::*;
 use crate::injector_core::internal::*;
+pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::atomic::*;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::task::Context;
@@ -494,40 +494,6 @@ macro_rules! fake {
          let raw_ptr = f as *const ();
          (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
-}
-
-// Define a verifier guard that checks the counter on Drop.
-/// A verifier type that holds a reference to an atomic counter and the expected call count.
-pub enum CallCountVerifier {
-    /// A real verifier that checks if the fake function was called the expected number of times.
-    WithCount {
-        counter: &'static AtomicUsize,
-        expected: usize,
-    },
-
-    /// A dummy verifier that performs no check.
-    Dummy,
-}
-
-impl Drop for CallCountVerifier {
-    fn drop(&mut self) {
-        if let CallCountVerifier::WithCount { counter, expected } = self {
-            let call_times = counter.load(Ordering::SeqCst);
-            if call_times != *expected {
-                // Avoid double panic
-                if std::thread::panicking() {
-                    return;
-                }
-
-                panic!(
-                    "Fake function was expected to be called {} time(s), but it is actually called {} time(s)",
-                    expected, call_times
-                );
-            }
-        }
-
-        // Dummy variant does nothing on drop.
-    }
 }
 
 /// A safe wrapper around a raw function pointer.
