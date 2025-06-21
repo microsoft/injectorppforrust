@@ -781,6 +781,14 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_return_boolean(self, value: bool) {
+        // Ensure the target function returns a bool
+        if !self.expected_signature.trim().ends_with("-> bool") {
+            panic!(
+                "Signature mismatch: will_return_boolean requires a function returning bool but got {}",
+                self.expected_signature
+            );
+        }
+
         let guard = self.when.will_return_boolean_guard(value);
         self.lib.guards.push(guard);
     }
