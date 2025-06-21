@@ -58,15 +58,21 @@ static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
-    ($f:ident :: <$($gen:ty),*>) => {{
-        let ptr = $f::<$($gen),*>;
-        unsafe { FuncPtr::new(ptr as *const ()) }
+    ($f:ident :: <$($gen:ty),*>, $fn_type:ty) => {{
+        let fn_val:$fn_type = $f::<$($gen),*>;
+        let ptr = fn_val as *const ();
+
+        // ask TypeId for the *value*’s type:
+        let sig = std::any::type_name_of_val(&fn_val);
+        unsafe { FuncPtr::new(ptr, sig) }
     }};
 
     // Case 2: Non-generic function
-    ($f:expr) => {{
-        let ptr = $f as *const ();
-        unsafe { FuncPtr::new(ptr) }
+    ($f:expr, $fn_type:ty) => {{
+        let fn_val:$fn_type = $f;
+        let ptr    = fn_val as *const ();
+        let sig    = std::any::type_name_of_val(&fn_val);
+        unsafe { FuncPtr::new(ptr, sig) }
     }};
 }
 
@@ -90,8 +96,10 @@ macro_rules! func {
 #[macro_export]
 macro_rules! closure {
     ($closure:expr, $fn_type:ty) => {{
-        let fn_ptr: $fn_type = $closure;
-        unsafe { FuncPtr::new(fn_ptr as *const ()) }
+        let fn_val: $fn_type = $closure;
+        let sig = std::any::type_name_of_val(&fn_val);
+
+        unsafe { FuncPtr::new(fn_val as *const (), sig) }
     }};
 }
 
@@ -152,8 +160,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns (no times).
     (
@@ -171,8 +180,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times, but no assign.
     (
@@ -195,8 +205,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns (no times, no assign).
     (
@@ -212,8 +223,26 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    (
+        func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        when: $cond:expr,
+        returns: $ret_val:expr
+    ) => {{
+         let verifier = CallCountVerifier::Dummy;
+         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
+             if $cond {
+                 $ret_val
+             } else {
+                 panic!("Fake function called with unexpected arguments");
+             }
+         }
+         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns and times
     (
@@ -237,8 +266,9 @@ macro_rules! fake {
                 unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -255,8 +285,9 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times and returns
     (
@@ -278,8 +309,9 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns only.
     (
@@ -294,8 +326,25 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    (
+        func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        returns: $ret_val:expr
+    ) => {{
+         let verifier = CallCountVerifier::Dummy;
+         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
+             if true {
+                 $ret_val
+             } else {
+                 unreachable!()
+             }
+         }
+         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === UNIT RETURNING FUNCTIONS (-> ()) ===
@@ -321,8 +370,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -344,8 +394,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -361,8 +412,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
@@ -377,8 +429,9 @@ macro_rules! fake {
                 unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -402,8 +455,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -424,8 +478,9 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -435,8 +490,9 @@ macro_rules! fake {
          fn fake($($arg_name: $arg_ty),*) -> () {
              if true { () } else { unreachable!() }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 }
 
@@ -458,6 +514,11 @@ impl Drop for CallCountVerifier {
         if let CallCountVerifier::WithCount { counter, expected } = self {
             let call_times = counter.load(Ordering::SeqCst);
             if call_times != *expected {
+                // Avoid double panic
+                if std::thread::panicking() {
+                    return;
+                }
+
                 panic!(
                     "Fake function was expected to be called {} time(s), but it is actually called {} time(s)",
                     expected, call_times
@@ -484,6 +545,7 @@ pub struct FuncPtr {
     ///
     /// This is a wrapper around a non-null pointer to ensure safety.
     func_ptr_internal: FuncPtrInternal,
+    signature: &'static str,
 }
 
 impl FuncPtr {
@@ -492,7 +554,7 @@ impl FuncPtr {
     /// # Safety
     ///
     /// The caller must ensure that the pointer is valid and points to a function.
-    pub unsafe fn new(ptr: *const ()) -> Self {
+    pub unsafe fn new(ptr: *const (), signature: &'static str) -> Self {
         // While these basic checks are performed, it is not a substitute for
         // proper function pointer validation. The caller must ensure that the
         // pointer is indeed a valid function pointer.
@@ -501,6 +563,7 @@ impl FuncPtr {
 
         Self {
             func_ptr_internal: FuncPtrInternal::new(nn),
+            signature,
         }
     }
 }
@@ -568,14 +631,18 @@ impl InjectorPP {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
-    ///     .will_execute_raw(injectorpp::func!(fake_exists));
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+    ///     .will_execute_raw(injectorpp::func!(fake_exists, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/non/existent/path").exists());
     /// ```
     pub fn when_called(&mut self, func: FuncPtr) -> WhenCalledBuilder<'_> {
         let when = WhenCalled::new(func.func_ptr_internal);
-        WhenCalledBuilder { lib: self, when }
+        WhenCalledBuilder {
+            lib: self,
+            when,
+            expected_signature: func.signature,
+        }
     }
 
     /// Begins faking an asynchronous function.
@@ -615,7 +682,9 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(func!(poll_fn).func_ptr_internal);
+        let when = WhenCalled::new(
+            func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
+        );
         WhenCalledBuilderAsync { lib: self, when }
     }
 }
@@ -630,6 +699,7 @@ impl Default for InjectorPP {
 pub struct WhenCalledBuilder<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
+    expected_signature: &'static str,
 }
 
 impl WhenCalledBuilder<'_> {
@@ -654,7 +724,7 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
     ///     .will_execute_raw(injectorpp::closure!(fake_closure, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/nonexistent").exists());
@@ -671,12 +741,19 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
-    ///     .will_execute_raw(injectorpp::func!(fake_exists));
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+    ///     .will_execute_raw(injectorpp::func!(fake_exists, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
+        if target.signature != self.expected_signature {
+            panic!(
+                "Signature mismatch: expected {:?} but got {:?}",
+                self.expected_signature, target.signature
+            );
+        }
+
         let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
     }
@@ -697,7 +774,7 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(original_func))
+    ///     .when_called(injectorpp::func!(original_func, fn(&mut i32) -> bool))
     ///     .will_execute(injectorpp::fake!(
     ///         func_type: fn(a: &mut i32) -> bool,
     ///         assign: { *a = 6 },
@@ -736,12 +813,20 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
     ///     .will_return_boolean(true);
     ///
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_return_boolean(self, value: bool) {
+        // Ensure the target function returns a bool
+        if !self.expected_signature.trim().ends_with("-> bool") {
+            panic!(
+                "Signature mismatch: will_return_boolean requires a function returning bool but got {}",
+                self.expected_signature
+            );
+        }
+
         let guard = self.when.will_return_boolean_guard(value);
         self.lib.guards.push(guard);
     }
@@ -759,7 +844,7 @@ macro_rules! async_return {
             std::task::Poll::Ready($val)
         }
 
-        $crate::func!(generated_poll_fn)
+        $crate::func!(generated_poll_fn, fn() -> std::task::Poll<$ty>)
     }};
 }
 

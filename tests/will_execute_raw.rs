@@ -5,7 +5,7 @@ use std::sync::atomic::*;
 
 static CALL_COUNT_FUNC: AtomicUsize = AtomicUsize::new(0);
 
-pub fn fake_path_exists() -> bool {
+pub fn fake_path_exists(_path: &Path) -> bool {
     println!("fake_path_exists executed.");
     true
 }
@@ -39,8 +39,8 @@ fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
 fn test_will_execute_raw_when_fake_file_dependency_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Path::exists))
-        .will_execute_raw(injectorpp::func!(fake_path_exists));
+        .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+        .will_execute_raw(injectorpp::func!(fake_path_exists, fn(&Path) -> bool));
 
     let test_path = "/path/that/does/not/exist";
     let result = Path::new(test_path).exists();
@@ -54,8 +54,8 @@ fn test_will_execute_raw_when_fake_no_return_function_should_success() {
 
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return))
-        .will_execute_raw(injectorpp::func!(fake_func_no_return));
+        .when_called(injectorpp::func!(func_no_return, fn()))
+        .will_execute_raw(injectorpp::func!(fake_func_no_return, fn()));
 
     func_no_return();
 
@@ -74,7 +74,7 @@ fn test_will_execute_raw_when_fake_no_return_function_use_closure_should_success
 
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return))
+        .when_called(injectorpp::func!(func_no_return, fn()))
         .will_execute_raw(injectorpp::closure!(fake_closure, fn()));
 
     func_no_return();
@@ -94,7 +94,8 @@ fn test_will_execute_raw_when_fake_generic_function_single_type_should_success()
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_single_type_always_fail_func::<&str>
+            complex_generic_single_type_always_fail_func,
+            fn(&'static str) -> std::io::Result<()>
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,
@@ -119,7 +120,8 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_should_succes
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func::<&str, bool, i32>
+            complex_generic_multiple_types_func,
+            fn(&'static str, bool, i32) -> String
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,
@@ -164,7 +166,8 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_with_differen
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func::<&str, bool, i32>
+            complex_generic_multiple_types_func,
+            fn(&'static str, bool, i32) -> String
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,
