@@ -16,10 +16,10 @@ fn test_fake_shm_open_should_return_fixed_fd() {
     injector
         .when_called(injectorpp::func!(
             shm_open,
-            fn(*const c_char, c_int, c_uint) -> c_int
+            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
         ))
         .will_execute(injectorpp::fake!(
-            func_type: fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
+            func_type: unsafe extern "C" fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
             returns: 32
         ));
 
@@ -35,10 +35,10 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
     injector
         .when_called(injectorpp::func!(
             shm_open,
-            fn(*const c_char, c_int, c_uint) -> c_int
+            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
         ))
         .will_execute(injectorpp::fake!(
-            func_type: fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
+            func_type: unsafe extern "C" fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
             when: unsafe { std::ffi::CStr::from_ptr(name).to_str().unwrap() } == "/fail",
             returns: -1
         ));
@@ -53,10 +53,10 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
     injector
         .when_called(injectorpp::func!(
             shm_open,
-            fn(*const c_char, c_int, c_uint) -> c_int
+            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
         ))
         .will_execute(injectorpp::fake!(
-            func_type: fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
+            func_type: unsafe extern "C" fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
             when: unsafe { std::ffi::CStr::from_ptr(name).to_str().unwrap() } == "/ok",
             returns: 100
         ));

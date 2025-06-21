@@ -227,6 +227,23 @@ macro_rules! fake {
          let raw_ptr = f as *const ();
          (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
+    (
+        func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        when: $cond:expr,
+        returns: $ret_val:expr
+    ) => {{
+         let verifier = CallCountVerifier::Dummy;
+         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
+             if $cond {
+                 $ret_val
+             } else {
+                 panic!("Fake function called with unexpected arguments");
+             }
+         }
+         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
     // With assign, returns and times
     (
         func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
@@ -310,6 +327,22 @@ macro_rules! fake {
              }
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    (
+        func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        returns: $ret_val:expr
+    ) => {{
+         let verifier = CallCountVerifier::Dummy;
+         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
+             if true {
+                 $ret_val
+             } else {
+                 unreachable!()
+             }
+         }
+         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
          (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
