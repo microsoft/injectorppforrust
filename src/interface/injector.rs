@@ -593,8 +593,8 @@ impl InjectorPP {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
-    ///     .will_execute_raw(injectorpp::func!(fake_exists));
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+    ///     .will_execute_raw(injectorpp::func!(fake_exists, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/non/existent/path").exists());
     /// ```
@@ -686,7 +686,7 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
     ///     .will_execute_raw(injectorpp::closure!(fake_closure, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/nonexistent").exists());
@@ -703,8 +703,8 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
-    ///     .will_execute_raw(injectorpp::func!(fake_exists));
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+    ///     .will_execute_raw(injectorpp::func!(fake_exists, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
@@ -736,7 +736,7 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(original_func))
+    ///     .when_called(injectorpp::func!(original_func, fn(&mut i32) -> bool))
     ///     .will_execute(injectorpp::fake!(
     ///         func_type: fn(a: &mut i32) -> bool,
     ///         assign: { *a = 6 },
@@ -775,7 +775,7 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
     ///     .will_return_boolean(true);
     ///
     /// assert!(Path::new("/nonexistent").exists());
