@@ -94,7 +94,7 @@ fn test_will_execute_raw_when_fake_generic_function_single_type_should_success()
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_single_type_always_fail_func::<&str>,
+            complex_generic_single_type_always_fail_func,
             fn(&'static str) -> std::io::Result<()>
         ))
         .will_execute_raw(injectorpp::closure!(
@@ -120,7 +120,7 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_should_succes
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func::<&str, bool, i32>,
+            complex_generic_multiple_types_func,
             fn(&'static str, bool, i32) -> String
         ))
         .will_execute_raw(injectorpp::closure!(
@@ -166,7 +166,7 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_with_differen
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func::<&str, bool, i32>,
+            complex_generic_multiple_types_func,
             fn(&'static str, bool, i32) -> String
         ))
         .will_execute_raw(injectorpp::closure!(

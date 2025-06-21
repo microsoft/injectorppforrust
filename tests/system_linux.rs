@@ -14,7 +14,10 @@ fn test_fake_shm_open_should_return_fixed_fd() {
     // Fake shm_open to always return file descriptor 32
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(shm_open))
+        .when_called(injectorpp::func!(
+            shm_open,
+            fn(*const c_char, c_int, c_uint) -> c_int
+        ))
         .will_execute(injectorpp::fake!(
             func_type: fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
             returns: 32
@@ -30,7 +33,10 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
     // Fake shm_open to return -1 (error) if name is "/fail", otherwise 100
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(shm_open))
+        .when_called(injectorpp::func!(
+            shm_open,
+            fn(*const c_char, c_int, c_uint) -> c_int
+        ))
         .will_execute(injectorpp::fake!(
             func_type: fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
             when: unsafe { std::ffi::CStr::from_ptr(name).to_str().unwrap() } == "/fail",
@@ -45,7 +51,10 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
 
     // The default behavior (not matched by 'when') will panic, so let's add a second fake for the other case:
     injector
-        .when_called(injectorpp::func!(shm_open))
+        .when_called(injectorpp::func!(
+            shm_open,
+            fn(*const c_char, c_int, c_uint) -> c_int
+        ))
         .will_execute(injectorpp::fake!(
             func_type: fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
             when: unsafe { std::ffi::CStr::from_ptr(name).to_str().unwrap() } == "/ok",
