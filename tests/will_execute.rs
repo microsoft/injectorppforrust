@@ -95,11 +95,11 @@ fn test_will_execute_when_fake_std_fs_read_should_success() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            std::fs::read::<&str>,
+            std::fs::read,
             fn(&'static str) -> std::io::Result<Vec<u8>>
         ))
         .will_execute(injectorpp::fake!(
-            func_type: fn(_path: &'static str) -> std::io::Result<Vec<u8>>,
+            func_type: fn(_path: &str) -> std::io::Result<Vec<u8>>,
             returns: Ok(vec![1, 2, 3])
         ));
 
@@ -178,7 +178,7 @@ fn test_will_execute_when_fake_generic_function_single_type_should_success() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_single_type_always_fail_func::<&str>,
+            complex_generic_single_type_always_fail_func,
             fn(&'static str) -> std::io::Result<()>
         ))
         .will_execute(injectorpp::fake!(
@@ -199,7 +199,7 @@ fn test_will_execute_when_fake_generic_function_single_type_can_recover() {
         let mut injector = InjectorPP::new();
         injector
             .when_called(injectorpp::func!(
-                complex_generic_single_type_always_fail_func::<&str>,
+                complex_generic_single_type_always_fail_func,
                 fn(&'static str) -> std::io::Result<()>
             ))
             .will_execute(injectorpp::fake!(
@@ -224,7 +224,7 @@ fn test_will_execute_when_fake_generic_function_multiple_types_should_success() 
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func::<&str, bool, i32>,
+            complex_generic_multiple_types_func,
             fn(&'static str, bool, i32) -> String
         ))
         .will_execute(injectorpp::fake!(

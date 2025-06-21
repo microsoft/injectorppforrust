@@ -95,7 +95,7 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(Path::exists))
+//!     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
 //!     .will_return_boolean(true);
 //!
 //! assert!(Path::new("/not/exist").exists());
