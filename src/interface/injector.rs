@@ -481,6 +481,11 @@ impl Drop for CallCountVerifier {
         if let CallCountVerifier::WithCount { counter, expected } = self {
             let call_times = counter.load(Ordering::SeqCst);
             if call_times != *expected {
+                // Avoid double panic
+                if std::thread::panicking() {
+                    return;
+                }
+
                 panic!(
                     "Fake function was expected to be called {} time(s), but it is actually called {} time(s)",
                     expected, call_times

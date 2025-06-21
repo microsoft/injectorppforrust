@@ -1,4 +1,5 @@
 use injectorpp::interface::injector::*;
+use std::{fmt::Display, path::Path};
 
 fn foo() {
     println!("foo");
@@ -12,6 +13,14 @@ pub fn return_string() -> String {
     return "Hello, world!".to_string();
 }
 
+fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
+    _a: A,
+    _b: B,
+    _c: C,
+) -> String {
+    return "Original value".to_string();
+}
+
 #[test]
 #[should_panic(
     expected = "Signature mismatch: will_return_boolean requires a function returning bool"
@@ -21,6 +30,35 @@ fn test_will_return_boolean_mismatched_type_should_panic() {
     injector
         .when_called(injectorpp::func!(return_string, fn() -> String))
         .will_return_boolean(true);
+}
+
+#[test]
+#[should_panic(expected = "Signature mismatch")]
+fn test_will_execute_when_function_signature_mismatch_should_panic() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_path: &str) -> bool,
+            returns: true
+        ));
+}
+
+#[test]
+#[should_panic(expected = "Signature mismatch")]
+fn test_will_execute_when_generic_function_multiple_types_signature_mismatch_should_panic() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(
+            complex_generic_multiple_types_func,
+            fn(&'static str, bool, i32) -> String
+        ))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(a: &str, b: bool) -> String,
+            when: a == "abc" && b == true,
+            returns: "Fake value".to_string(),
+            times: 1
+        ));
 }
 
 #[test]
