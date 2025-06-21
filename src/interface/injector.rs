@@ -87,6 +87,27 @@ macro_rules! func {
     }};
 }
 
+#[macro_export]
+macro_rules! func_with_type {
+    // Case 1: Generic function — provide function name and types separately
+    ($f:ident :: <$($gen:ty),*>, $fn_type:ty) => {{
+        let fn_val:$fn_type = $f::<$($gen),*>;
+        let ptr = fn_val as *const ();
+
+        // ask TypeId for the *value*’s type:
+        let tid = type_id_val(&fn_val);
+        unsafe { FuncPtr::new(ptr, tid) }
+    }};
+
+    // Case 2: Non-generic function
+    ($f:expr, $fn_type:ty) => {{
+        let fn_val:$fn_type = $f;
+        let ptr    = fn_val as *const ();
+        let tid    = type_id_val(&fn_val);
+        unsafe { FuncPtr::new(ptr, tid) }
+    }};
+}
+
 /// Converts a closure to a `FuncPtr`.
 ///
 /// This macro allows you to use Rust closures as mock implementations in injectorpp
@@ -171,8 +192,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With when, assign, and returns (no times).
     (
@@ -190,8 +212,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With when and returns, times, but no assign.
     (
@@ -214,8 +237,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With when and returns (no times, no assign).
     (
@@ -231,8 +255,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With assign, returns and times
     (
@@ -256,8 +281,9 @@ macro_rules! fake {
                 unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -274,8 +300,9 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With times and returns
     (
@@ -297,8 +324,9 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With returns only.
     (
@@ -313,8 +341,9 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
 
     // === UNIT RETURNING FUNCTIONS (-> ()) ===
@@ -340,8 +369,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -363,8 +393,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -380,8 +411,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With assign only
     (
@@ -396,8 +428,9 @@ macro_rules! fake {
                 unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -421,8 +454,9 @@ macro_rules! fake {
                  panic!("Fake function called with unexpected arguments");
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -443,8 +477,9 @@ macro_rules! fake {
                  unreachable!()
              }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&fake)) }, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -454,8 +489,9 @@ macro_rules! fake {
          fn fake($($arg_name: $arg_ty),*) -> () {
              if true { () } else { unreachable!() }
          }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
+         let f: fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, type_id_val(&f)) }, verifier)
     }};
 }
 
