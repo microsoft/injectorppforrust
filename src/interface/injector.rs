@@ -151,10 +151,14 @@ impl InjectorPP {
     ///     assert_eq!(result, 123); // The patched value
     /// }
     /// ```
-    pub fn when_called_async<F, T>(&mut self, _: Pin<&mut F>) -> WhenCalledBuilderAsync<'_>
+    pub fn when_called_async<F, T>(
+        &mut self,
+        _: (Pin<&mut F>, String),
+    ) -> WhenCalledBuilderAsync<'_>
     where
         F: Future<Output = T>,
     {
+        // let t = std::any::type_name::<bool>();
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
         let when = WhenCalled::new(
             crate::func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,

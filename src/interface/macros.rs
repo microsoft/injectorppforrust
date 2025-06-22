@@ -94,9 +94,10 @@ macro_rules! closure {
 // Ensure the async function can be correctly used in injectorpp.
 #[macro_export]
 macro_rules! async_func {
-    ($expr:expr) => {
-        std::pin::pin!($expr)
-    };
+    ($expr:expr, $ty:ty) => {{
+        let sig = std::any::type_name::<std::task::Poll<$ty>>();
+        (std::pin::pin!($expr), sig.to_string())
+    }};
 }
 
 /// Creates a mock function implementation with configurable behavior and verification.

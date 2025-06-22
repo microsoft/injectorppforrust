@@ -83,13 +83,9 @@ fn test_will_execute_null_pointer_should_panic() {
 async fn test_will_return_async_null_pointer_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_one(
-            u32::default()
-        )))
-        .will_return_async(unsafe {
-            FuncPtr::new(
-                std::ptr::null(),
-                std::any::type_name_of_val(&simple_async_func_u32_add_one),
-            )
-        });
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_u32_add_one(u32::default()),
+            u32
+        ))
+        .will_return_async(unsafe { FuncPtr::new(std::ptr::null(), std::any::type_name::<u32>()) });
 }
