@@ -17,17 +17,17 @@ macro_rules! func {
     ($f:ident :: <$($gen:ty),*>, $fn_type:ty) => {{
         let fn_val:$fn_type = $f::<$($gen),*>;
         let ptr = fn_val as *const ();
-
-        // ask TypeId for the *value*’s type:
         let sig = std::any::type_name_of_val(&fn_val);
+
         unsafe { FuncPtr::new(ptr, sig) }
     }};
 
     // Case 2: Non-generic function
     ($f:expr, $fn_type:ty) => {{
         let fn_val:$fn_type = $f;
-        let ptr    = fn_val as *const ();
-        let sig    = std::any::type_name_of_val(&fn_val);
+        let ptr = fn_val as *const ();
+        let sig = std::any::type_name_of_val(&fn_val);
+
         unsafe { FuncPtr::new(ptr, sig) }
     }};
 }
@@ -59,6 +59,7 @@ macro_rules! func_unchecked {
     ($f:expr) => {{
         let fn_val = $f;
         let ptr = fn_val as *const ();
+
         FuncPtr::new(ptr, "")
     }};
 }
