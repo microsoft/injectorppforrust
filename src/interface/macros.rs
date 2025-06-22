@@ -96,7 +96,7 @@ macro_rules! closure {
 macro_rules! async_func {
     ($expr:expr, $ty:ty) => {{
         let sig = std::any::type_name::<std::task::Poll<$ty>>();
-        (std::pin::pin!($expr), sig.to_string())
+        (std::pin::pin!($expr), sig)
     }};
 }
 

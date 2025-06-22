@@ -153,7 +153,7 @@ impl InjectorPP {
     /// ```
     pub fn when_called_async<F, T>(
         &mut self,
-        _: (Pin<&mut F>, String),
+        _: (Pin<&mut F>, &'static str),
     ) -> WhenCalledBuilderAsync<'_>
     where
         F: Future<Output = T>,
