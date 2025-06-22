@@ -91,12 +91,35 @@ macro_rules! closure {
     }};
 }
 
+#[doc(hidden)]
+pub fn __assert_future_output<Fut, T>(_: &mut Fut)
+where
+    Fut: std::future::Future<Output = T>,
+{
+}
+
 // Ensure the async function can be correctly used in injectorpp.
 #[macro_export]
 macro_rules! async_func {
-    ($expr:expr) => {
-        std::pin::pin!($expr)
-    };
+    ($expr:expr, $ty:ty) => {{
+        let mut __fut = $expr;
+
+        let _ = __assert_future_output::<_, $ty>(&mut __fut);
+
+        let sig = std::any::type_name::<fn() -> std::task::Poll<$ty>>();
+        (std::pin::pin!(__fut), sig)
+    }};
+}
+
+#[macro_export]
+macro_rules! async_return {
+    ($val:expr, $ty:ty) => {{
+        fn generated_poll_fn() -> std::task::Poll<$ty> {
+            std::task::Poll::Ready($val)
+        }
+
+        $crate::func!(generated_poll_fn, fn() -> std::task::Poll<$ty>)
+    }};
 }
 
 /// Creates a mock function implementation with configurable behavior and verification.
@@ -481,16 +504,5 @@ macro_rules! fake {
          let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
          (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
-    }};
-}
-
-#[macro_export]
-macro_rules! async_return {
-    ($val:expr, $ty:ty) => {{
-        fn generated_poll_fn() -> std::task::Poll<$ty> {
-            std::task::Poll::Ready($val)
-        }
-
-        $crate::func!(generated_poll_fn, fn() -> std::task::Poll<$ty>)
     }};
 }

@@ -1,6 +1,7 @@
 use crate::injector_core::common::*;
 use crate::injector_core::internal::*;
 pub use crate::interface::func_ptr::FuncPtr;
+pub use crate::interface::macros::__assert_future_output;
 pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;
@@ -144,14 +145,17 @@ impl InjectorPP {
     /// async fn main() {
     ///     let mut injector = InjectorPP::new();
     ///     injector
-    ///         .when_called_async(injectorpp::async_func!(async_add_one(u32::default())))
+    ///         .when_called_async(injectorpp::async_func!(async_add_one(u32::default()), u32))
     ///         .will_return_async(injectorpp::async_return!(123, u32));
     ///
     ///     let result = async_add_one(5).await;
     ///     assert_eq!(result, 123); // The patched value
     /// }
     /// ```
-    pub fn when_called_async<F, T>(&mut self, _: Pin<&mut F>) -> WhenCalledBuilderAsync<'_>
+    pub fn when_called_async<F, T>(
+        &mut self,
+        fake_pair: (Pin<&mut F>, &'static str),
+    ) -> WhenCalledBuilderAsync<'_>
     where
         F: Future<Output = T>,
     {
@@ -159,7 +163,13 @@ impl InjectorPP {
         let when = WhenCalled::new(
             crate::func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
         );
-        WhenCalledBuilderAsync { lib: self, when }
+
+        let signature = fake_pair.1;
+        WhenCalledBuilderAsync {
+            lib: self,
+            when,
+            expected_signature: signature,
+        }
     }
 }
 
@@ -367,6 +377,7 @@ impl WhenCalledBuilder<'_> {
 pub struct WhenCalledBuilderAsync<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
+    expected_signature: &'static str,
 }
 
 impl WhenCalledBuilderAsync<'_> {
@@ -387,7 +398,7 @@ impl WhenCalledBuilderAsync<'_> {
     /// async fn main() {
     ///     let mut injector = InjectorPP::new();
     ///     injector
-    ///         .when_called_async(injectorpp::async_func!(async_func_bool(true)))
+    ///         .when_called_async(injectorpp::async_func!(async_func_bool(true), bool))
     ///         .will_return_async(injectorpp::async_return!(false, bool));
     ///
     ///     let result = async_func_bool(true).await;
@@ -395,6 +406,13 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub fn will_return_async(self, target: FuncPtr) {
+        if target.signature != self.expected_signature {
+            panic!(
+                "Signature mismatch: expected {:?} but got {:?}",
+                self.expected_signature, target.signature
+            );
+        }
+
         let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
     }

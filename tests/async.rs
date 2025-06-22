@@ -31,9 +31,10 @@ async fn test_simple_async_func_should_success() {
     let mut injector = InjectorPP::new();
 
     injector
-        .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_one(
-            u32::default()
-        )))
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_u32_add_one(u32::default()),
+            u32
+        ))
         .will_return_async(injectorpp::async_return!(123, u32));
 
     let x = simple_async_func_u32_add_one(1).await;
@@ -44,9 +45,10 @@ async fn test_simple_async_func_should_success() {
     assert_eq!(x, 3);
 
     injector
-        .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_two(
-            u32::default()
-        )))
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_u32_add_two(u32::default()),
+            u32
+        ))
         .will_return_async(injectorpp::async_return!(678, u32));
 
     // Now because it's faked the return value should be changed
@@ -58,9 +60,10 @@ async fn test_simple_async_func_should_success() {
     assert_eq!(y, true);
 
     injector
-        .when_called_async(injectorpp::async_func!(simple_async_func_bool(
-            bool::default()
-        )))
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_bool(bool::default()),
+            bool
+        ))
         .will_return_async(injectorpp::async_return!(false, bool));
 
     // Now because it's faked the return value should be false
@@ -79,7 +82,7 @@ async fn test_complex_struct_async_func_without_param_should_success() {
 
         let mut injector = InjectorPP::new();
         injector
-            .when_called_async(injectorpp::async_func!(temp_client.get()))
+            .when_called_async(injectorpp::async_func!(temp_client.get(), String))
             .will_return_async(injectorpp::async_return!(
                 "Fake GET response".to_string(),
                 String
@@ -114,7 +117,10 @@ async fn test_complex_struct_async_func_with_param_should_success() {
 
         let mut injector = InjectorPP::new();
         injector
-            .when_called_async(injectorpp::async_func!(temp_client.post("test payload")))
+            .when_called_async(injectorpp::async_func!(
+                temp_client.post("test payload"),
+                String
+            ))
             .will_return_async(injectorpp::async_return!(
                 "Fake POST response".to_string(),
                 String

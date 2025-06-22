@@ -16,7 +16,8 @@ async fn test_azure_http_client_always_return_200() {
     let mut injector = InjectorPP::new();
     injector
         .when_called_async(injectorpp::async_func!(
-            temp_client.execute_request(&mut temp_req)
+            temp_client.execute_request(&mut temp_req),
+            std::result::Result<RawResponse, Error>
         ))
         .will_return_async(injectorpp::async_return!(
             // always return an Ok(RawResponse) with status 200
