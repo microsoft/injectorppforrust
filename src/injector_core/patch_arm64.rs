@@ -139,7 +139,7 @@ fn generate_will_return_boolean_jit_code(jit_ptr: *mut u8, value: bool) {
 }
 
 #[inline]
-fn write_instruction(buf: &mut [u8], cursor: &mut usize, instr: u32) {
+fn write_instruction(buf: &mut [u8], cursor: &mut usize, instruction: u32) {
     let bytes = instr.to_le_bytes();
     buf[*cursor..*cursor + 4].copy_from_slice(&bytes);
     *cursor += 4;
