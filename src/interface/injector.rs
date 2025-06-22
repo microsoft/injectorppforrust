@@ -153,17 +153,18 @@ impl InjectorPP {
     /// ```
     pub fn when_called_async<F, T>(
         &mut self,
-        _: (Pin<&mut F>, &'static str),
+        fake_pair: (Pin<&mut F>, &'static str),
     ) -> WhenCalledBuilderAsync<'_>
     where
         F: Future<Output = T>,
     {
-        // let t = std::any::type_name::<bool>();
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
         let when = WhenCalled::new(
             crate::func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
         );
-        WhenCalledBuilderAsync { lib: self, when }
+
+        let signature = fake_pair.1;
+        WhenCalledBuilderAsync { lib: self, when, expected_signature: signature }
     }
 }
 
@@ -371,6 +372,7 @@ impl WhenCalledBuilder<'_> {
 pub struct WhenCalledBuilderAsync<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
+    expected_signature: &'static str,
 }
 
 impl WhenCalledBuilderAsync<'_> {
@@ -399,6 +401,13 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub fn will_return_async(self, target: FuncPtr) {
+        if target.signature != self.expected_signature {
+            panic!(
+                "Signature mismatch: expected {:?} but got {:?}",
+                self.expected_signature, target.signature
+            );
+        }
+
         let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
     }
