@@ -68,7 +68,12 @@ fn test_will_execute_null_pointer_should_panic() {
     injector
         .when_called(injectorpp::func!(foo, fn()))
         .will_execute((
-            unsafe { FuncPtr::new(std::ptr::null(), std::any::type_name_of_val(&foo)) },
+            unsafe {
+                FuncPtr::new(std::ptr::null(), {
+                    let f: fn() = foo;
+                    std::any::type_name_of_val(&f)
+                })
+            },
             CallCountVerifier::Dummy,
         ));
 }
