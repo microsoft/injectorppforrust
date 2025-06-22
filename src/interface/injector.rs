@@ -1,10 +1,10 @@
 use crate::injector_core::common::*;
 use crate::injector_core::internal::*;
+pub use crate::interface::func_ptr::FuncPtr;
+pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::ptr::NonNull;
-use std::sync::atomic::*;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::task::Context;
@@ -41,469 +41,6 @@ impl<T> NoPoisonMutex<T> {
 }
 
 static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
-
-/// Converts a function to a `FuncPtr`.
-///
-/// This macro handles both generic and non-generic functions:
-/// - For generic functions, provide the function name and type parameters separately: `func!(function_name::<Type1, Type2>)`
-/// - For non-generic functions, simply provide the function: `func!(function_name)`
-///
-/// # Safety
-///
-/// This macro uses unsafe code internally and comes with the following requirements:
-/// - The function pointer must remain valid for the entire duration it's used by injectorpp
-/// - The function signature must match exactly what the injectorpp expects at runtime
-/// - Mismatched function signatures will lead to undefined behavior or memory corruption
-/// - Function pointers created with this macro should only be used with the appropriate injectorpp APIs
-#[macro_export]
-macro_rules! func {
-    // Case 1: Generic function — provide function name and types separately
-    ($f:ident :: <$($gen:ty),*>) => {{
-        let ptr = $f::<$($gen),*>;
-        unsafe { FuncPtr::new(ptr as *const ()) }
-    }};
-
-    // Case 2: Non-generic function
-    ($f:expr) => {{
-        let ptr = $f as *const ();
-        unsafe { FuncPtr::new(ptr) }
-    }};
-}
-
-/// Converts a closure to a `FuncPtr`.
-///
-/// This macro allows you to use Rust closures as mock implementations in injectorpp
-/// by converting them to function pointers.
-///
-/// # Parameters
-///
-/// - `$closure`: The closure to convert
-/// - `$fn_type`: The explicit function type signature that the closure conforms to
-///
-/// # Safety
-///
-/// This macro uses unsafe code internally and comes with significant safety requirements:
-/// - The closure's signature must exactly match the provided function type
-/// - The closure must not capture any references or variables with lifetimes shorter than the mock's usage
-/// - The closure must remain valid for the entire duration it's used by injectorpp
-/// - Mismatched function signatures will lead to undefined behavior or memory corruption
-#[macro_export]
-macro_rules! closure {
-    ($closure:expr, $fn_type:ty) => {{
-        let fn_ptr: $fn_type = $closure;
-        unsafe { FuncPtr::new(fn_ptr as *const ()) }
-    }};
-}
-
-// Ensure the async function can be correctly used in injectorpp.
-#[macro_export]
-macro_rules! async_func {
-    ($expr:expr) => {
-        std::pin::pin!($expr)
-    };
-}
-
-/// Creates a mock function implementation with configurable behavior and verification.
-///
-/// This macro generates a function that can be used to replace real functions during testing.
-/// It supports configuring return values, parameter validation, side effects through
-/// reference parameters, and verification of call counts.
-///
-/// # Parameters
-///
-/// - `func_type`: Required. The function signature to mock (e.g., `fn(x: i32) -> bool`).
-/// - `when`: Optional. A condition on the function parameters that must be true for the mock to execute.
-/// - `assign`: Optional. Code block to execute for modifying reference parameters.
-/// - `returns`: Required for non-unit functions. The value to return from the mock.
-/// - `times`: Optional. Verifies the function is called exactly this many times.
-///
-/// # Safety
-///
-/// This macro uses unsafe code internally and comes with significant safety requirements:
-/// - The function signature must exactly match the signature of the function being mocked
-/// - The mock must handle all possible input parameters correctly
-/// - Memory referenced by parameters must remain valid for the duration of the function call
-/// - Type mismatches between the mocked function and its implementation will cause undefined behavior
-/// - Mock functions created with this macro must only be used with the `will_execute` method
-#[macro_export]
-macro_rules! fake {
-    // === NON-UNIT RETURNING FUNCTIONS (return type not "()") ===
-
-    // With when, assign, returns, and times.
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        when: $cond:expr,
-        assign: { $($assign:tt)* },
-        returns: $ret_val:expr,
-        times: $expected:expr
-    ) => {{
-         use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if $cond {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 { $($assign)* }
-                 $ret_val
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With when, assign, and returns (no times).
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        when: $cond:expr,
-        assign: { $($assign:tt)* },
-        returns: $ret_val:expr
-    ) => {{
-         let verifier = CallCountVerifier::Dummy;
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if $cond {
-                 { $($assign)* }
-                 $ret_val
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With when and returns, times, but no assign.
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        when: $cond:expr,
-        returns: $ret_val:expr,
-        times: $expected:expr
-    ) => {{
-         use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if $cond {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 $ret_val
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With when and returns (no times, no assign).
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        when: $cond:expr,
-        returns: $ret_val:expr
-    ) => {{
-         let verifier = CallCountVerifier::Dummy;
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if $cond {
-                 $ret_val
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With assign, returns and times
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        assign: { $($assign:tt)* },
-        returns: $ret_val:expr,
-        times: $expected:expr
-    ) => {{
-         use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if true {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 { $($assign)* }
-                 $ret_val
-             } else {
-                unreachable!()
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With assign and returns
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        assign: { $($assign:tt)* },
-        returns: $ret_val:expr
-    ) => {{
-         let verifier = CallCountVerifier::Dummy;
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if true {
-                { $($assign)* }
-                 $ret_val
-             } else {
-                 unreachable!()
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With times and returns
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        returns: $ret_val:expr,
-        times: $expected:expr
-    ) => {{
-         use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if true {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 $ret_val
-             } else {
-                 unreachable!()
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With returns only.
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
-        returns: $ret_val:expr
-    ) => {{
-         let verifier = CallCountVerifier::Dummy;
-         fn fake($($arg_name: $arg_ty),*) -> $ret {
-             if true {
-                 $ret_val
-             } else {
-                 unreachable!()
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> $ret) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-
-    // === UNIT RETURNING FUNCTIONS (-> ()) ===
-
-    // With when, assign, and times.
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> (),
-        when: $cond:expr,
-        assign: { $($assign:tt)* },
-        times: $expected:expr
-    ) => {{
-         use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> () {
-             if $cond {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 { $($assign)* }
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With when and times (no assign).
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> (),
-        when: $cond:expr,
-        times: $expected:expr
-    ) => {{
-         use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> () {
-             if $cond {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 ()
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With when and assign (no times).
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> (),
-        when: $cond:expr,
-        assign: { $($assign:tt)* }
-    ) => {{
-         let verifier = CallCountVerifier::Dummy;
-         fn fake($($arg_name: $arg_ty),*) -> () {
-             if $cond {
-                 { $($assign)* }
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With assign only
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> (),
-        assign: { $($assign:tt)* }
-    ) => {{
-         let verifier = CallCountVerifier::Dummy;
-         fn fake($($arg_name: $arg_ty),*) -> () {
-             if true {
-                 { $($assign)* }
-             } else {
-                unreachable!()
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With assign and times
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> (),
-        assign: { $($assign:tt)* },
-        times: $expected:expr
-    ) => {{
-
-        use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> () {
-             if true {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 { $($assign)* }
-                 ()
-             } else {
-                 panic!("Fake function called with unexpected arguments");
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With times only (when defaults to true, no assign).
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> (),
-        times: $expected:expr
-    ) => {{
-         use std::sync::atomic::{AtomicUsize, Ordering};
-         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
-         fn fake($($arg_name: $arg_ty),*) -> () {
-             if true {
-                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
-                 if prev >= $expected {
-                     panic!("Fake function called more times than expected");
-                 }
-                 ()
-             } else {
-                 unreachable!()
-             }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (unsafe { FuncPtr::new(raw_ptr) }, verifier)
-    }};
-    // With neither (no when, no times, no assign, no returns).
-    (
-        func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> ()
-    ) => {{
-         let verifier = CallCountVerifier::Dummy;
-         fn fake($($arg_name: $arg_ty),*) -> () {
-             if true { () } else { unreachable!() }
-         }
-         let raw_ptr = (fake as fn($($arg_ty),*) -> ()) as *const ();
-         (raw_ptr, verifier)
-    }};
-}
-
-// Define a verifier guard that checks the counter on Drop.
-/// A verifier type that holds a reference to an atomic counter and the expected call count.
-pub enum CallCountVerifier {
-    /// A real verifier that checks if the fake function was called the expected number of times.
-    WithCount {
-        counter: &'static AtomicUsize,
-        expected: usize,
-    },
-
-    /// A dummy verifier that performs no check.
-    Dummy,
-}
-
-impl Drop for CallCountVerifier {
-    fn drop(&mut self) {
-        if let CallCountVerifier::WithCount { counter, expected } = self {
-            let call_times = counter.load(Ordering::SeqCst);
-            if call_times != *expected {
-                panic!(
-                    "Fake function was expected to be called {} time(s), but it is actually called {} time(s)",
-                    expected, call_times
-                );
-            }
-        }
-
-        // Dummy variant does nothing on drop.
-    }
-}
-
-/// A safe wrapper around a raw function pointer.
-///
-/// `FuncPtr` encapsulates a non-null function pointer and provides safe
-/// creation and access methods. It's used throughout injectorpp
-/// to represent both original functions to be mocked and their replacement
-/// implementations.
-///
-/// # Safety
-///
-/// The caller must ensure that the pointer is valid and points to a function.
-pub struct FuncPtr {
-    /// The internal representation of the function pointer.
-    ///
-    /// This is a wrapper around a non-null pointer to ensure safety.
-    func_ptr_internal: FuncPtrInternal,
-}
-
-impl FuncPtr {
-    /// Creates a new `FuncPtr` from a raw pointer.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the pointer is valid and points to a function.
-    pub unsafe fn new(ptr: *const ()) -> Self {
-        // While these basic checks are performed, it is not a substitute for
-        // proper function pointer validation. The caller must ensure that the
-        // pointer is indeed a valid function pointer.
-        let p = ptr as *mut ();
-        let nn = NonNull::new(p).expect("Pointer must not be null");
-
-        Self {
-            func_ptr_internal: FuncPtrInternal::new(nn),
-        }
-    }
-}
 
 /// A high-level type that holds patch guards so that when it goes out of scope,
 /// the original function code is automatically restored.
@@ -568,14 +105,18 @@ impl InjectorPP {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
-    ///     .will_execute_raw(injectorpp::func!(fake_exists));
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+    ///     .will_execute_raw(injectorpp::func!(fake_exists, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/non/existent/path").exists());
     /// ```
     pub fn when_called(&mut self, func: FuncPtr) -> WhenCalledBuilder<'_> {
         let when = WhenCalled::new(func.func_ptr_internal);
-        WhenCalledBuilder { lib: self, when }
+        WhenCalledBuilder {
+            lib: self,
+            when,
+            expected_signature: func.signature,
+        }
     }
 
     /// Begins faking an asynchronous function.
@@ -615,7 +156,9 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(func!(poll_fn).func_ptr_internal);
+        let when = WhenCalled::new(
+            crate::func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
+        );
         WhenCalledBuilderAsync { lib: self, when }
     }
 }
@@ -630,6 +173,7 @@ impl Default for InjectorPP {
 pub struct WhenCalledBuilder<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
+    expected_signature: &'static str,
 }
 
 impl WhenCalledBuilder<'_> {
@@ -654,7 +198,7 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
     ///     .will_execute_raw(injectorpp::closure!(fake_closure, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/nonexistent").exists());
@@ -671,12 +215,77 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
-    ///     .will_execute_raw(injectorpp::func!(fake_exists));
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+    ///     .will_execute_raw(injectorpp::func!(fake_exists, fn(&Path) -> bool));
     ///
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
+        if target.signature != self.expected_signature {
+            panic!(
+                "Signature mismatch: expected {:?} but got {:?}",
+                self.expected_signature, target.signature
+            );
+        }
+
+        let guard = self.when.will_execute_guard(target.func_ptr_internal);
+        self.lib.guards.push(guard);
+    }
+
+    /// Fake the target function to branch to the provided function.
+    ///
+    /// Allows full customization of the faked function behavior by providing your own function or closure.
+    ///
+    /// # Parameters
+    ///
+    /// - `target`: A FuncPtr holds the pointer to the replacement function or closure. Using injectorpp::func_unchecked! or injectorpp::closure! macros is recommended to obtain this pointer.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it skips type check.
+    ///
+    /// # Example
+    ///
+    /// Using closure:
+    /// ```rust
+    /// use injectorpp::interface::injector::*;
+    /// use std::path::Path;
+    ///
+    /// let fake_closure = |_: &Path| -> bool {
+    ///    true
+    /// };
+    ///
+    /// let mut injector = InjectorPP::new();
+    ///
+    /// unsafe {
+    ///     injector
+    ///         .when_called(injectorpp::func_unchecked!(Path::exists))
+    ///         .will_execute_raw_unchecked(injectorpp::closure!(fake_closure, fn(&Path) -> bool));
+    /// }
+    ///
+    /// assert!(Path::new("/nonexistent").exists());
+    /// ```
+    ///
+    /// Using custom function:
+    /// ```rust
+    /// use injectorpp::interface::injector::*;
+    /// use std::path::Path;
+    ///
+    /// fn fake_exists(_path: &Path) -> bool {
+    ///     true
+    /// }
+    ///
+    /// let mut injector = InjectorPP::new();
+    ///
+    /// unsafe {
+    ///     injector
+    ///         .when_called(injectorpp::func_unchecked!(Path::exists))
+    ///         .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_exists));
+    /// }
+    ///
+    /// assert!(Path::new("/nonexistent").exists());
+    /// ```
+    pub unsafe fn will_execute_raw_unchecked(self, target: FuncPtr) {
         let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
     }
@@ -697,7 +306,7 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(original_func))
+    ///     .when_called(injectorpp::func!(original_func, fn(&mut i32) -> bool))
     ///     .will_execute(injectorpp::fake!(
     ///         func_type: fn(a: &mut i32) -> bool,
     ///         assign: { *a = 6 },
@@ -736,12 +345,20 @@ impl WhenCalledBuilder<'_> {
     ///
     /// let mut injector = InjectorPP::new();
     /// injector
-    ///     .when_called(injectorpp::func!(Path::exists))
+    ///     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
     ///     .will_return_boolean(true);
     ///
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_return_boolean(self, value: bool) {
+        // Ensure the target function returns a bool
+        if !self.expected_signature.trim().ends_with("-> bool") {
+            panic!(
+                "Signature mismatch: will_return_boolean requires a function returning bool but got {}",
+                self.expected_signature
+            );
+        }
+
         let guard = self.when.will_return_boolean_guard(value);
         self.lib.guards.push(guard);
     }
@@ -750,17 +367,6 @@ impl WhenCalledBuilder<'_> {
 pub struct WhenCalledBuilderAsync<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
-}
-
-#[macro_export]
-macro_rules! async_return {
-    ($val:expr, $ty:ty) => {{
-        fn generated_poll_fn() -> std::task::Poll<$ty> {
-            std::task::Poll::Ready($val)
-        }
-
-        $crate::func!(generated_poll_fn)
-    }};
 }
 
 impl WhenCalledBuilderAsync<'_> {

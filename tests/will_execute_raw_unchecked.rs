@@ -36,11 +36,14 @@ fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
 }
 
 #[test]
-fn test_will_execute_raw_when_fake_file_dependency_should_success() {
+fn test_will_execute_raw_unchecked_when_fake_file_dependency_should_success() {
     let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
-        .will_execute_raw(injectorpp::func!(fake_path_exists, fn(&Path) -> bool));
+
+    unsafe {
+        injector
+            .when_called(injectorpp::func_unchecked!(Path::exists))
+            .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_path_exists));
+    }
 
     let test_path = "/path/that/does/not/exist";
     let result = Path::new(test_path).exists();
@@ -49,13 +52,16 @@ fn test_will_execute_raw_when_fake_file_dependency_should_success() {
 }
 
 #[test]
-fn test_will_execute_raw_when_fake_no_return_function_should_success() {
+fn test_will_execute_raw_unchecked_when_fake_no_return_function_should_success() {
     CALL_COUNT_FUNC.store(0, Ordering::SeqCst);
 
     let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(func_no_return, fn()))
-        .will_execute_raw(injectorpp::func!(fake_func_no_return, fn()));
+
+    unsafe {
+        injector
+            .when_called(injectorpp::func_unchecked!(func_no_return))
+            .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_func_no_return));
+    }
 
     func_no_return();
 
@@ -65,7 +71,7 @@ fn test_will_execute_raw_when_fake_no_return_function_should_success() {
 }
 
 #[test]
-fn test_will_execute_raw_when_fake_no_return_function_use_closure_should_success() {
+fn test_will_execute_raw_unchecked_when_fake_no_return_function_use_closure_should_success() {
     static CALL_COUNT_CLOSURE: AtomicU32 = AtomicU32::new(0);
 
     let fake_closure = || {
@@ -73,9 +79,12 @@ fn test_will_execute_raw_when_fake_no_return_function_use_closure_should_success
     };
 
     let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(func_no_return, fn()))
-        .will_execute_raw(injectorpp::closure!(fake_closure, fn()));
+
+    unsafe {
+        injector
+            .when_called(injectorpp::func_unchecked!(func_no_return))
+            .will_execute_raw_unchecked(injectorpp::closure!(fake_closure, fn()));
+    }
 
     func_no_return();
 
@@ -83,7 +92,7 @@ fn test_will_execute_raw_when_fake_no_return_function_use_closure_should_success
 }
 
 #[test]
-fn test_will_execute_raw_when_fake_generic_function_single_type_should_success() {
+fn test_will_execute_raw_unchecked_when_fake_generic_function_single_type_should_success() {
     static CALL_COUNT_CLOSURE: AtomicU32 = AtomicU32::new(0);
     let fake_closure = |_path: &str| -> std::io::Result<()> {
         CALL_COUNT_CLOSURE.fetch_add(1, Ordering::SeqCst);
@@ -92,15 +101,17 @@ fn test_will_execute_raw_when_fake_generic_function_single_type_should_success()
     };
 
     let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(
-            complex_generic_single_type_always_fail_func,
-            fn(&'static str) -> std::io::Result<()>
-        ))
-        .will_execute_raw(injectorpp::closure!(
-            fake_closure,
-            fn(&str) -> std::io::Result<()>
-        ));
+
+    unsafe {
+        injector
+            .when_called(injectorpp::func_unchecked!(
+                complex_generic_single_type_always_fail_func::<&str>
+            ))
+            .will_execute_raw_unchecked(injectorpp::closure!(
+                fake_closure,
+                fn(&str) -> std::io::Result<()>
+            ));
+    }
 
     let actual_result = complex_generic_single_type_always_fail_func("/not/exist/path");
 
@@ -109,7 +120,7 @@ fn test_will_execute_raw_when_fake_generic_function_single_type_should_success()
 }
 
 #[test]
-fn test_will_execute_raw_when_fake_generic_function_multiple_types_should_success() {
+fn test_will_execute_raw_unchecked_when_fake_generic_function_multiple_types_should_success() {
     static CALL_COUNT_CLOSURE: AtomicU32 = AtomicU32::new(0);
     let fake_closure = |_a: &str, _b: bool, _c: i32| -> String {
         CALL_COUNT_CLOSURE.fetch_add(1, Ordering::SeqCst);
@@ -118,15 +129,17 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_should_succes
     };
 
     let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func,
-            fn(&'static str, bool, i32) -> String
-        ))
-        .will_execute_raw(injectorpp::closure!(
-            fake_closure,
-            fn(&str, bool, i32) -> String
-        ));
+
+    unsafe {
+        injector
+            .when_called(injectorpp::func_unchecked!(
+                complex_generic_multiple_types_func::<&str, bool, i32>
+            ))
+            .will_execute_raw_unchecked(injectorpp::closure!(
+                fake_closure,
+                fn(&str, bool, i32) -> String
+            ));
+    }
 
     let actual_result = complex_generic_multiple_types_func("abc", true, 123);
 
@@ -139,7 +152,7 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_should_succes
 }
 
 #[test]
-fn test_will_execute_raw_when_fake_generic_function_multiple_types_with_different_conditins_should_success(
+fn test_will_execute_raw_unchecked_when_fake_generic_function_multiple_types_with_different_conditins_should_success(
 ) {
     static CALL_COUNT_CONDITION_ONE_CLOSURE: AtomicU32 = AtomicU32::new(0);
     static CALL_COUNT_CONDITION_TWO_CLOSURE: AtomicU32 = AtomicU32::new(0);
@@ -164,15 +177,17 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_with_differen
     };
 
     let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func,
-            fn(&'static str, bool, i32) -> String
-        ))
-        .will_execute_raw(injectorpp::closure!(
-            fake_closure,
-            fn(&str, bool, i32) -> String
-        ));
+
+    unsafe {
+        injector
+            .when_called(injectorpp::func_unchecked!(
+                complex_generic_multiple_types_func::<&str, bool, i32>
+            ))
+            .will_execute_raw_unchecked(injectorpp::closure!(
+                fake_closure,
+                fn(&str, bool, i32) -> String
+            ));
+    }
 
     // Call the function with condition 1 twice.
     let actual_result = complex_generic_multiple_types_func("abc", true, 123);
