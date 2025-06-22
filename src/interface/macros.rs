@@ -115,7 +115,7 @@ macro_rules! async_func {
 ///
 /// # Safety
 ///
-/// This function skips the signature check and assumes the caller knows what they are doing.
+/// This macro skips the signature check and assumes the caller knows what they are doing.
 #[macro_export]
 macro_rules! async_func_unchecked {
     ($expr:expr) => {
@@ -139,7 +139,7 @@ macro_rules! async_return {
 ///
 /// # Safety
 ///
-/// This function skips the signature check and assumes the caller knows what they are doing.
+/// This macro skips the signature check and assumes the caller knows what they are doing.
 #[macro_export]
 macro_rules! async_return_unchecked {
     ($val:expr, $ty:ty) => {{
