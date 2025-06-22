@@ -32,6 +32,24 @@ macro_rules! func {
     }};
 }
 
+#[macro_export]
+macro_rules! func_unchecked {
+    // Case 1: Generic function — provide function name and types separately
+    ($f:ident :: <$($gen:ty),*>) => {{
+        let fn_val = $f::<$($gen),*>;
+        let ptr = fn_val as *const ();
+
+        FuncPtr::new(ptr, "")
+    }};
+
+    // Case 2: Non-generic function
+    ($f:expr) => {{
+        let fn_val = $f;
+        let ptr = fn_val as *const ();
+        FuncPtr::new(ptr, "")
+    }};
+}
+
 /// Converts a closure to a `FuncPtr`.
 ///
 /// This macro allows you to use Rust closures as mock implementations in injectorpp
