@@ -171,6 +171,64 @@ impl InjectorPP {
             expected_signature: signature,
         }
     }
+
+    /// Begins faking an asynchronous function.
+    ///
+    /// Accepts a pinned mutable reference to the async function future. Use the `async_func!` macro to obtain this reference.
+    ///
+    /// # Parameters
+    ///
+    /// - `_`: A pinned mutable reference to the async function future.
+    ///
+    /// # Returns
+    ///
+    /// A builder (`WhenCalledBuilderAsync`) to further specify the async fake behavior.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it skips type check.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use injectorpp::interface::injector::*;
+    ///
+    /// async fn async_add_one(x: u32) -> u32 {
+    ///     x + 1
+    /// }
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut injector = InjectorPP::new();
+    ///
+    ///     unsafe {
+    ///         injector
+    ///             .when_called_async_unchecked(injectorpp::async_func_unchecked!(async_add_one(u32::default())))
+    ///             .will_return_async_unchecked(injectorpp::async_return_unchecked!(123, u32));
+    ///     }
+    ///
+    ///     let result = async_add_one(5).await;
+    ///     assert_eq!(result, 123); // The patched value
+    /// }
+    /// ```
+    pub unsafe fn when_called_async_unchecked<F, T>(
+        &mut self,
+        _: Pin<&mut F>,
+    ) -> WhenCalledBuilderAsync<'_>
+    where
+        F: Future<Output = T>,
+    {
+        let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
+        let when = WhenCalled::new(
+            crate::func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
+        );
+
+        WhenCalledBuilderAsync {
+            lib: self,
+            when,
+            expected_signature: "",
+        }
+    }
 }
 
 impl Default for InjectorPP {
@@ -413,6 +471,42 @@ impl WhenCalledBuilderAsync<'_> {
             );
         }
 
+        let guard = self.when.will_execute_guard(target.func_ptr_internal);
+        self.lib.guards.push(guard);
+    }
+
+    /// Fake the target async function to return a specified async value.
+    ///
+    /// This method allows you to fake async functions by specifying the return value directly.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it skips type check.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use injectorpp::interface::injector::*;
+    ///
+    /// async fn async_func_bool(x: bool) -> bool {
+    ///     x
+    /// }
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let mut injector = InjectorPP::new();
+    ///     
+    ///     unsafe {
+    ///         injector
+    ///             .when_called_async_unchecked(injectorpp::async_func_unchecked!(async_func_bool(true)))
+    ///             .will_return_async_unchecked(injectorpp::async_return_unchecked!(false, bool));
+    ///     }
+    ///
+    ///     let result = async_func_bool(true).await;
+    ///     assert_eq!(result, false);
+    /// }
+    /// ```
+    pub unsafe fn will_return_async_unchecked(self, target: FuncPtr) {
         let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
     }

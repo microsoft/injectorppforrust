@@ -112,6 +112,13 @@ macro_rules! async_func {
 }
 
 #[macro_export]
+macro_rules! async_func_unchecked {
+    ($expr:expr) => {
+        std::pin::pin!($expr)
+    };
+}
+
+#[macro_export]
 macro_rules! async_return {
     ($val:expr, $ty:ty) => {{
         fn generated_poll_fn() -> std::task::Poll<$ty> {
@@ -119,6 +126,17 @@ macro_rules! async_return {
         }
 
         $crate::func!(generated_poll_fn, fn() -> std::task::Poll<$ty>)
+    }};
+}
+
+#[macro_export]
+macro_rules! async_return_unchecked {
+    ($val:expr, $ty:ty) => {{
+        fn generated_poll_fn() -> std::task::Poll<$ty> {
+            std::task::Poll::Ready($val)
+        }
+
+        $crate::func_unchecked!(generated_poll_fn)
     }};
 }
 
