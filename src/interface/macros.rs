@@ -111,6 +111,17 @@ macro_rules! async_func {
     }};
 }
 
+#[macro_export]
+macro_rules! async_return {
+    ($val:expr, $ty:ty) => {{
+        fn generated_poll_fn() -> std::task::Poll<$ty> {
+            std::task::Poll::Ready($val)
+        }
+
+        $crate::func!(generated_poll_fn, fn() -> std::task::Poll<$ty>)
+    }};
+}
+
 /// Creates a mock function implementation with configurable behavior and verification.
 ///
 /// This macro generates a function that can be used to replace real functions during testing.
@@ -493,16 +504,5 @@ macro_rules! fake {
          let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
          (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
-    }};
-}
-
-#[macro_export]
-macro_rules! async_return {
-    ($val:expr, $ty:ty) => {{
-        fn generated_poll_fn() -> std::task::Poll<$ty> {
-            std::task::Poll::Ready($val)
-        }
-
-        $crate::func!(generated_poll_fn, fn() -> std::task::Poll<$ty>)
     }};
 }
