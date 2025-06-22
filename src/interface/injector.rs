@@ -1,6 +1,7 @@
 use crate::injector_core::common::*;
 use crate::injector_core::internal::*;
 pub use crate::interface::func_ptr::FuncPtr;
+pub use crate::interface::macros::__assert_future_output;
 pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;

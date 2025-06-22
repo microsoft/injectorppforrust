@@ -91,12 +91,23 @@ macro_rules! closure {
     }};
 }
 
+#[doc(hidden)]
+pub fn __assert_future_output<Fut, T>(_: &mut Fut)
+where
+    Fut: std::future::Future<Output = T>,
+{
+}
+
 // Ensure the async function can be correctly used in injectorpp.
 #[macro_export]
 macro_rules! async_func {
     ($expr:expr, $ty:ty) => {{
+        let mut __fut = $expr;
+
+        let _ = __assert_future_output::<_, $ty>(&mut __fut);
+
         let sig = std::any::type_name::<fn() -> std::task::Poll<$ty>>();
-        (std::pin::pin!($expr), sig)
+        (std::pin::pin!(__fut), sig)
     }};
 }
 
