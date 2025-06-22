@@ -1,8 +1,8 @@
 /// Converts a function to a `FuncPtr`.
 ///
 /// This macro handles both generic and non-generic functions:
-/// - For generic functions, provide the function name and type parameters separately: `func!(function_name::<Type1, Type2>)`
-/// - For non-generic functions, simply provide the function: `func!(function_name)`
+/// - For generic functions, provide the function name and type parameters separately: `func!(function_name, fn(Type1, Type2))`
+/// - For non-generic functions, simply provide the function: `func!(function_name, fn())`
 ///
 /// # Safety
 ///
@@ -32,6 +32,19 @@ macro_rules! func {
     }};
 }
 
+/// Converts a function to a `FuncPtr`.
+///
+/// This macro handles both generic and non-generic functions:
+/// - For generic functions, provide the function name and type parameters separately: `func!(function_name::<Type1, Type2>)`
+/// - For non-generic functions, simply provide the function: `func!(function_name)`
+///
+/// # Safety
+///
+/// This macro uses unsafe code internally and comes with the following requirements:
+/// - The function pointer must remain valid for the entire duration it's used by injectorpp
+/// - The function signature must match exactly what the injectorpp expects at runtime
+/// - Mismatched function signatures will lead to undefined behavior or memory corruption
+/// - Function pointers created with this macro should only be used with the appropriate injectorpp APIs
 #[macro_export]
 macro_rules! func_unchecked {
     // Case 1: Generic function — provide function name and types separately

@@ -232,6 +232,59 @@ impl WhenCalledBuilder<'_> {
         self.lib.guards.push(guard);
     }
 
+    /// Fake the target function to branch to the provided function.
+    ///
+    /// Allows full customization of the faked function behavior by providing your own function or closure.
+    ///
+    /// # Parameters
+    ///
+    /// - `target`: A FuncPtr holds the pointer to the replacement function or closure. Using injectorpp::func_unchecked! or injectorpp::closure! macros is recommended to obtain this pointer.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it skips type check.
+    ///
+    /// # Example
+    ///
+    /// Using closure:
+    /// ```rust
+    /// use injectorpp::interface::injector::*;
+    /// use std::path::Path;
+    ///
+    /// let fake_closure = |_: &Path| -> bool {
+    ///    true
+    /// };
+    ///
+    /// let mut injector = InjectorPP::new();
+    ///
+    /// unsafe {
+    ///     injector
+    ///         .when_called(injectorpp::func_unchecked!(Path::exists))
+    ///         .will_execute_raw_unchecked(injectorpp::closure!(fake_closure, fn(&Path) -> bool));
+    /// }
+    ///
+    /// assert!(Path::new("/nonexistent").exists());
+    /// ```
+    ///
+    /// Using custom function:
+    /// ```rust
+    /// use injectorpp::interface::injector::*;
+    /// use std::path::Path;
+    ///
+    /// fn fake_exists(_path: &Path) -> bool {
+    ///     true
+    /// }
+    ///
+    /// let mut injector = InjectorPP::new();
+    ///
+    /// unsafe {
+    ///     injector
+    ///         .when_called(injectorpp::func_unchecked!(Path::exists))
+    ///         .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_exists));
+    /// }
+    ///
+    /// assert!(Path::new("/nonexistent").exists());
+    /// ```
     pub unsafe fn will_execute_raw_unchecked(self, target: FuncPtr) {
         let guard = self.when.will_execute_guard(target.func_ptr_internal);
         self.lib.guards.push(guard);
