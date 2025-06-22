@@ -337,7 +337,7 @@
 //!     injector
 //!         .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_one(
 //!             u32::default()
-//!         )))
+//!         ), u32))
 //!         .will_return_async(injectorpp::async_return!(123, u32));
 //!
 //!     let x = simple_async_func_u32_add_one(1).await;
@@ -352,7 +352,7 @@
 //!     injector
 //!         .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_two(
 //!             u32::default()
-//!         )))
+//!         ), u32))
 //!         .will_return_async(injectorpp::async_return!(678, u32));
 //!
 //!     // Now because it's faked the return value should be changed
@@ -368,7 +368,7 @@
 //!     injector
 //!         .when_called_async(injectorpp::async_func!(simple_async_func_bool(
 //!             bool::default()
-//!         )))
+//!         ), bool))
 //!         .will_return_async(injectorpp::async_return!(false, bool));
 //!
 //!     // Now because it's faked the return value should be false
@@ -406,7 +406,7 @@
 //!
 //!         let mut injector = InjectorPP::new();
 //!         injector
-//!             .when_called_async(injectorpp::async_func!(temp_client.get()))
+//!             .when_called_async(injectorpp::async_func!(temp_client.get(), String))
 //!             .will_return_async(injectorpp::async_return!(
 //!                 "Fake GET response".to_string(),
 //!                 String

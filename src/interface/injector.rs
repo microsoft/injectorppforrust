@@ -144,7 +144,7 @@ impl InjectorPP {
     /// async fn main() {
     ///     let mut injector = InjectorPP::new();
     ///     injector
-    ///         .when_called_async(injectorpp::async_func!(async_add_one(u32::default())))
+    ///         .when_called_async(injectorpp::async_func!(async_add_one(u32::default()), u32))
     ///         .will_return_async(injectorpp::async_return!(123, u32));
     ///
     ///     let result = async_add_one(5).await;
@@ -164,7 +164,11 @@ impl InjectorPP {
         );
 
         let signature = fake_pair.1;
-        WhenCalledBuilderAsync { lib: self, when, expected_signature: signature }
+        WhenCalledBuilderAsync {
+            lib: self,
+            when,
+            expected_signature: signature,
+        }
     }
 }
 
@@ -393,7 +397,7 @@ impl WhenCalledBuilderAsync<'_> {
     /// async fn main() {
     ///     let mut injector = InjectorPP::new();
     ///     injector
-    ///         .when_called_async(injectorpp::async_func!(async_func_bool(true)))
+    ///         .when_called_async(injectorpp::async_func!(async_func_bool(true), bool))
     ///         .will_return_async(injectorpp::async_return!(false, bool));
     ///
     ///     let result = async_func_bool(true).await;
