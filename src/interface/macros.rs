@@ -98,7 +98,7 @@ where
 {
 }
 
-// Ensure the async function can be correctly used in injectorpp.
+/// Ensure the async function can be correctly used in injectorpp.
 #[macro_export]
 macro_rules! async_func {
     ($expr:expr, $ty:ty) => {{
@@ -111,6 +111,11 @@ macro_rules! async_func {
     }};
 }
 
+/// Ensure the async function can be correctly used in injectorpp.
+///
+/// # Safety
+///
+/// This function skips the signature check and assumes the caller knows what they are doing.
 #[macro_export]
 macro_rules! async_func_unchecked {
     ($expr:expr) => {
@@ -118,6 +123,7 @@ macro_rules! async_func_unchecked {
     };
 }
 
+/// Config a return value for faking an async function.
 #[macro_export]
 macro_rules! async_return {
     ($val:expr, $ty:ty) => {{
@@ -129,6 +135,11 @@ macro_rules! async_return {
     }};
 }
 
+/// Config a return value for faking an async function.
+///
+/// # Safety
+///
+/// This function skips the signature check and assumes the caller knows what they are doing.
 #[macro_export]
 macro_rules! async_return_unchecked {
     ($val:expr, $ty:ty) => {{
