@@ -89,3 +89,15 @@ async fn test_will_return_async_null_pointer_should_panic() {
         ))
         .will_return_async(unsafe { FuncPtr::new(std::ptr::null(), std::any::type_name::<u32>()) });
 }
+
+#[tokio::test]
+#[should_panic(expected = "Signature mismatch")]
+async fn test_will_return_async_mismatched_type_should_panic() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_u32_add_one(u32::default()),
+            u32
+        ))
+        .will_return_async(injectorpp::async_return!("Test Value".to_string(), String));
+}
