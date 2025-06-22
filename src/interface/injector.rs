@@ -120,6 +120,51 @@ impl InjectorPP {
         }
     }
 
+    /// Begins faking a function.
+    ///
+    /// Accepts a FuncPtr to the function you want to fake. Use the `func!` macro to obtain this pointer.
+    ///
+    /// # Parameters
+    ///
+    /// - `func`: A FuncPtr holds the pointer to the target function obtained via `func!` macro.
+    ///
+    /// # Returns
+    ///
+    /// A builder (`WhenCalledBuilder`) to further specify the fake behavior.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because it skips type check.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use injectorpp::interface::injector::*;
+    /// use std::path::Path;
+    ///
+    /// fn fake_exists(_path: &Path) -> bool {
+    ///     true
+    /// }
+    ///
+    /// let mut injector = InjectorPP::new();
+    ///
+    /// unsafe {
+    ///     injector
+    ///         .when_called_unchecked(injectorpp::func_unchecked!(Path::exists))
+    ///         .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_exists));
+    /// }
+    ///
+    /// assert!(Path::new("/non/existent/path").exists());
+    /// ```
+    pub unsafe fn when_called_unchecked(&mut self, func: FuncPtr) -> WhenCalledBuilder<'_> {
+        let when = WhenCalled::new(func.func_ptr_internal);
+        WhenCalledBuilder {
+            lib: self,
+            when,
+            expected_signature: "",
+        }
+    }
+
     /// Begins faking an asynchronous function.
     ///
     /// Accepts a pinned mutable reference to the async function future. Use the `async_func!` macro to obtain this reference.
