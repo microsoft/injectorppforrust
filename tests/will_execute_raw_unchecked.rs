@@ -41,7 +41,7 @@ fn test_will_execute_raw_unchecked_when_fake_file_dependency_should_success() {
 
     unsafe {
         injector
-            .when_called(injectorpp::func_unchecked!(Path::exists))
+            .when_called_unchecked(injectorpp::func_unchecked!(Path::exists))
             .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_path_exists));
     }
 
@@ -59,7 +59,7 @@ fn test_will_execute_raw_unchecked_when_fake_no_return_function_should_success()
 
     unsafe {
         injector
-            .when_called(injectorpp::func_unchecked!(func_no_return))
+            .when_called_unchecked(injectorpp::func_unchecked!(func_no_return))
             .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_func_no_return));
     }
 
@@ -82,8 +82,8 @@ fn test_will_execute_raw_unchecked_when_fake_no_return_function_use_closure_shou
 
     unsafe {
         injector
-            .when_called(injectorpp::func_unchecked!(func_no_return))
-            .will_execute_raw_unchecked(injectorpp::closure!(fake_closure, fn()));
+            .when_called_unchecked(injectorpp::func_unchecked!(func_no_return))
+            .will_execute_raw_unchecked(injectorpp::closure_unchecked!(fake_closure, fn()));
     }
 
     func_no_return();
@@ -104,10 +104,10 @@ fn test_will_execute_raw_unchecked_when_fake_generic_function_single_type_should
 
     unsafe {
         injector
-            .when_called(injectorpp::func_unchecked!(
+            .when_called_unchecked(injectorpp::func_unchecked!(
                 complex_generic_single_type_always_fail_func::<&str>
             ))
-            .will_execute_raw_unchecked(injectorpp::closure!(
+            .will_execute_raw_unchecked(injectorpp::closure_unchecked!(
                 fake_closure,
                 fn(&str) -> std::io::Result<()>
             ));
@@ -132,10 +132,10 @@ fn test_will_execute_raw_unchecked_when_fake_generic_function_multiple_types_sho
 
     unsafe {
         injector
-            .when_called(injectorpp::func_unchecked!(
+            .when_called_unchecked(injectorpp::func_unchecked!(
                 complex_generic_multiple_types_func::<&str, bool, i32>
             ))
-            .will_execute_raw_unchecked(injectorpp::closure!(
+            .will_execute_raw_unchecked(injectorpp::closure_unchecked!(
                 fake_closure,
                 fn(&str, bool, i32) -> String
             ));
@@ -180,10 +180,10 @@ fn test_will_execute_raw_unchecked_when_fake_generic_function_multiple_types_wit
 
     unsafe {
         injector
-            .when_called(injectorpp::func_unchecked!(
+            .when_called_unchecked(injectorpp::func_unchecked!(
                 complex_generic_multiple_types_func::<&str, bool, i32>
             ))
-            .will_execute_raw_unchecked(injectorpp::closure!(
+            .will_execute_raw_unchecked(injectorpp::closure_unchecked!(
                 fake_closure,
                 fn(&str, bool, i32) -> String
             ));
