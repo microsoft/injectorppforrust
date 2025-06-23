@@ -86,7 +86,7 @@ impl Foo {
 fn test_will_execute_when_fake_file_dependency_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+        .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
         .will_execute(injectorpp::fake!(
             func_type: fn(_path: &Path) -> bool,
             returns: true
@@ -443,7 +443,7 @@ fn test_will_execute_when_fake_method_can_recover() {
 fn test_will_execute_fake_unsafe_non_unit_returns_only_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe_non_unit, unsafe fn(i32) -> i32))
+        .when_called(injectorpp::func!(unsafe{} fn (unsafe_non_unit)(i32) -> i32))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(val: i32) -> i32,
             returns: val + 1
