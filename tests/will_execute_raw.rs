@@ -39,8 +39,8 @@ fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
 fn test_will_execute_raw_when_fake_file_dependency_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
-        .will_execute_raw(injectorpp::func!(fake_path_exists, fn(&Path) -> bool));
+        .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
+        .will_execute_raw(injectorpp::func!(fn (fake_path_exists)(&Path) -> bool));
 
     let test_path = "/path/that/does/not/exist";
     let result = Path::new(test_path).exists();
@@ -120,8 +120,7 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_should_succes
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func,
-            fn(&'static str, bool, i32) -> String
+            fn (complex_generic_multiple_types_func)(&'static str, bool, i32) -> String
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,

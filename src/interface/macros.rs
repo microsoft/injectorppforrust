@@ -22,6 +22,11 @@ macro_rules! func {
 
         unsafe { FuncPtr::new(ptr, sig) }
     }};
+
+    // Simplified syntax: allow using `func!(fn (Path::exists)(&Path) -> bool)`
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> $ret)
+    }};
 }
 
 /// Converts a function to a `FuncPtr`.
