@@ -23,30 +23,32 @@ macro_rules! func {
         unsafe { FuncPtr::new(ptr, sig) }
     }};
 
-    // Simplified syntax: allow using `func!(fn (Path::exists)(&Path) -> bool)`
+    // Simplified fn with return
     (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, fn($($arg_ty),*) -> $ret)
     }};
 
+    // Simplified fn with unit return
     (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
         $crate::func!($f, fn($($arg_ty),*))
     }};
 
+    // Simplified unsafe fn with return
     (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
     }};
 
-    // simplified unsafe fn, unit return
+    // Simplified unsafe fn with unit return
     (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
         $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
     }};
 
-    // simplified unsafe extern "C" fn with return
+    // Simplified unsafe extern "C" fn with return
     (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
     }};
 
-    // simplified unsafe extern "C" fn, unit return
+    // Simplified unsafe extern "C" fn with unit return
     (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
         $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
     }};

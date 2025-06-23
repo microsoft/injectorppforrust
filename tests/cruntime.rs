@@ -13,8 +13,7 @@ fn test_fake_getenv_returns_custom_pointer() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            getenv,
-            unsafe extern "C" fn(*const c_char) -> *mut c_char
+            unsafe{} extern "C" fn (getenv)(*const c_char) -> *mut c_char
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(_name: *const c_char) -> *mut c_char,
@@ -32,8 +31,7 @@ fn test_fake_getenv_when_key_matches() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            getenv,
-            unsafe extern "C" fn(*const c_char) -> *mut c_char
+            unsafe{} extern "C" fn(getenv)(*const c_char) -> *mut c_char
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(name: *const c_char) -> *mut c_char,
@@ -52,8 +50,7 @@ fn test_fake_memset_assign() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            memset,
-            unsafe extern "C" fn(*mut c_void, c_int, usize) -> *mut c_void
+            unsafe{} extern "C" fn(memset)(*mut c_void, c_int, usize) -> *mut c_void
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(s: *mut c_void, _c: c_int, _n: usize) -> *mut c_void,
