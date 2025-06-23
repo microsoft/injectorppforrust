@@ -476,7 +476,7 @@
 //!     true
 //! }
 //!
-//!  unsafe {
+//! unsafe {
 //!     injector
 //!         .when_called_unchecked(injectorpp::func_unchecked!(Path::exists))
 //!         .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_path_exists));
