@@ -102,10 +102,9 @@ fn test_will_execute_when_fake_file_dependency_should_success() {
 fn test_will_execute_when_fake_std_fs_read_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(
-            std::fs::read,
-            fn(&'static str) -> std::io::Result<Vec<u8>>
-        ))
+        .when_called(
+            injectorpp::func!(fn (std::fs::read)(&'static str) -> std::io::Result<Vec<u8>>),
+        )
         .will_execute(injectorpp::fake!(
             func_type: fn(_path: &str) -> std::io::Result<Vec<u8>>,
             returns: Ok(vec![1, 2, 3])
@@ -119,7 +118,7 @@ fn test_will_execute_when_fake_std_fs_read_should_success() {
 fn test_will_execute_when_fake_no_return_function_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return, fn()))
+        .when_called(injectorpp::func!(fn (func_no_return)()))
         .will_execute(injectorpp::fake!(
             func_type: fn() -> (),
             times: 1
@@ -139,7 +138,7 @@ fn test_will_execute_when_fake_no_return_function_should_success() {
 fn test_will_execute_when_fake_no_return_function_over_called_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return, fn()))
+        .when_called(injectorpp::func!(fn (func_no_return)()))
         .will_execute(injectorpp::fake!(
             func_type: fn() -> (),
             times: 2
@@ -171,7 +170,7 @@ fn test_will_execute_when_fake_no_return_function_over_called_should_panic() {
 fn test_will_execute_when_fake_no_return_function_under_called_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return, fn()))
+        .when_called(injectorpp::func!(fn (func_no_return)()))
         .will_execute(injectorpp::fake!(
             func_type: fn() -> (),
             times: 3
@@ -186,8 +185,7 @@ fn test_will_execute_when_fake_generic_function_single_type_should_success() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_single_type_always_fail_func,
-            fn(&'static str) -> std::io::Result<()>
+            fn (complex_generic_single_type_always_fail_func)(&'static str) -> std::io::Result<()>
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(path: &str) -> std::io::Result<()>,
@@ -207,8 +205,7 @@ fn test_will_execute_when_fake_generic_function_single_type_can_recover() {
         let mut injector = InjectorPP::new();
         injector
             .when_called(injectorpp::func!(
-                complex_generic_single_type_always_fail_func,
-                fn(&'static str) -> std::io::Result<()>
+                fn (complex_generic_single_type_always_fail_func)(&'static str) -> std::io::Result<()>
             ))
             .will_execute(injectorpp::fake!(
                 func_type: fn(path: &str) -> std::io::Result<()>,
@@ -232,8 +229,7 @@ fn test_will_execute_when_fake_generic_function_multiple_types_should_success() 
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func,
-            fn(&'static str, bool, i32) -> String
+            fn (complex_generic_multiple_types_func)(&'static str, bool, i32) -> String
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &str, b: bool, c: i32) -> String,
@@ -255,8 +251,7 @@ fn test_will_execute_when_fake_single_reference_param_function_should_success() 
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            single_reference_param_func,
-            fn(&mut i32) -> bool
+            fn (single_reference_param_func)(&mut i32) -> bool
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &mut i32) -> bool,
@@ -277,8 +272,7 @@ fn test_will_execute_when_fake_single_reference_param_no_return_function_should_
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            single_reference_param_no_return_func,
-            fn(&mut i32) -> ()
+            fn (single_reference_param_no_return_func)(&mut i32) -> ()
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &mut i32) -> (),
@@ -297,8 +291,7 @@ fn test_will_execute_when_fake_multiple_reference_param_function_should_success(
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            multiple_reference_params_func,
-            fn(&mut i32, &mut bool) -> bool
+            fn (multiple_reference_params_func)(&mut i32, &mut bool) -> bool
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &mut i32, b: &mut bool) -> bool,
@@ -322,8 +315,7 @@ fn test_will_execute_when_fake_multiple_reference_param_no_return_function_shoul
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            multiple_reference_params_no_return_func,
-            fn(&mut i32, &mut bool) -> ()
+            fn (multiple_reference_params_no_return_func)(&mut i32, &mut bool) -> ()
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &mut i32, b: &mut bool) -> (),
@@ -344,7 +336,7 @@ fn test_will_execute_when_fake_multiple_reference_param_no_return_function_shoul
 fn test_will_execute_when_fake_file_dependency_should_success_times() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Path::is_dir, fn(&Path) -> bool))
+        .when_called(injectorpp::func!(fn (Path::is_dir)(&Path) -> bool))
         .will_execute(injectorpp::fake!(
             func_type: fn(_path: &Path) -> bool,
             returns: true,
@@ -360,7 +352,7 @@ fn test_will_execute_when_fake_file_dependency_should_success_times() {
 fn test_will_execute_when_fake_method_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Foo::bar, fn(&Foo) -> i32))
+        .when_called(injectorpp::func!(fn (Foo::bar)(&Foo) -> i32))
         .will_execute(injectorpp::fake!(
             func_type: fn(_f: &Foo) -> i32,
             returns: 1
@@ -376,7 +368,7 @@ fn test_will_execute_when_fake_method_should_success() {
 fn test_will_execute_when_fake_method_with_parameter_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Foo::add, fn(&Foo, i32) -> i32))
+        .when_called(injectorpp::func!(fn (Foo::add)(&Foo, i32) -> i32))
         .will_execute(injectorpp::fake!(
             func_type: fn(f: &Foo, value: i32) -> i32,
             when: f.value > 0,
@@ -394,8 +386,7 @@ fn test_will_execute_when_fake_method_with_output_parameter_no_return_should_suc
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            Foo::add_no_return,
-            fn(&Foo, i32, &mut i32) -> ()
+            fn (Foo::add_no_return)(&Foo, i32, &mut i32) -> ()
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(f: &Foo, value: i32, output: &mut i32) -> (),
@@ -416,8 +407,7 @@ fn test_will_execute_when_fake_method_can_recover() {
         let mut injector = InjectorPP::new();
         injector
             .when_called(injectorpp::func!(
-                Foo::add_no_return,
-                fn(&Foo, i32, &mut i32) -> ()
+                fn (Foo::add_no_return)(&Foo, i32, &mut i32) -> ()
             ))
             .will_execute(injectorpp::fake!(
                 func_type: fn(f: &Foo, value: i32, output: &mut i32) -> (),
@@ -461,7 +451,7 @@ fn test_will_execute_fake_unsafe_non_unit_returns_only_should_success() {
 fn test_will_execute_fake_unsafe_non_unit_returns_and_times_over_called_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe_non_unit, unsafe fn(i32) -> i32))
+        .when_called(injectorpp::func!(unsafe{} fn (unsafe_non_unit)(i32) -> i32))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(val: i32) -> i32,
             returns: val + 2,
@@ -481,7 +471,7 @@ fn test_will_execute_fake_unsafe_non_unit_returns_and_times_over_called_should_p
 fn test_will_execute_fake_unsafe_unit_without_times_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .when_called(injectorpp::func!(unsafe{} fn (unsafe_unit)(&mut i32) -> ()))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(_x: &mut i32) -> ()
         ));
@@ -501,7 +491,7 @@ fn test_will_execute_fake_unsafe_unit_without_times_should_success() {
 fn test_will_execute_fake_unsafe_unit_with_times_over_called_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .when_called(injectorpp::func!(unsafe{} fn (unsafe_unit)(&mut i32) -> ()))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(_x: &mut i32) -> (),
             times: 1
@@ -523,7 +513,7 @@ fn test_will_execute_fake_unsafe_unit_with_times_over_called_should_panic() {
 fn test_will_execute_fake_unsafe_unit_with_assign_only_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .when_called(injectorpp::func!(unsafe{} fn (unsafe_unit)(&mut i32) -> ()))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(x: &mut i32) -> (),
             assign: { *x += 5 }
@@ -539,7 +529,7 @@ fn test_will_execute_fake_unsafe_unit_with_assign_only_should_success() {
 fn test_will_execute_fake_unsafe_unit_with_assign_and_times_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .when_called(injectorpp::func!(unsafe{} fn (unsafe_unit)(&mut i32) -> ()))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(x: &mut i32) -> (),
             assign: { *x += 2 },
@@ -558,7 +548,7 @@ fn test_will_execute_fake_unsafe_unit_with_assign_and_times_should_success() {
 fn test_will_execute_fake_unsafe_unit_assign_and_times_over_called_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .when_called(injectorpp::func!(unsafe{} fn (unsafe_unit)(&mut i32) -> ()))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(x: &mut i32) -> (),
             assign: { *x += 3 },
