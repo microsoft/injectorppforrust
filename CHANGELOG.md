@@ -1,3 +1,9 @@
+# 0.4.0 (June 23, 2025)
+
+- Introduce type check for major APIs.
+- Breaking change for `func!` to require user provide function types.
+- Provide unsafe APIs to bypass type check.
+
 # 0.3.3 (May 28, 2025)
 
 - Fix cache coherency issue and thread safety issue.

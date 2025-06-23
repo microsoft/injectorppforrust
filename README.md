@@ -35,7 +35,7 @@ With injectorpp, you can write tests without needing to modify the production co
 ```rust
 let mut injector = InjectorPP::new();
 injector
-    .when_called(injectorpp::func!(fs::create_dir_all::<&str>))
+    .when_called(injectorpp::func!(fn (fs::create_dir_all)(&'static str) -> std::io::Result<()>)
     .will_execute(injectorpp::fake!(
         func_type: fn(path: &str) -> std::io::Result<()>,
         when: path == "/tmp/target_files",
@@ -91,7 +91,7 @@ If the function only returns boolean and you only want to make it constantly ret
 ```rust
 let mut injector = InjectorPP::new();
 injector
-    .when_called(injectorpp::func!(Path::exists))
+    .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
     .will_return_boolean(true);
 ```
 
@@ -118,9 +118,9 @@ A simple example:
 fn test_will_execute_when_fake_file_dependency_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Path::exists))
+        .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
         .will_execute(injectorpp::fake!(
-            func_type: fn() -> bool,
+            func_type: fn(_path: &Path) -> bool,
             returns: true
         ));
 
@@ -139,7 +139,7 @@ fn test_will_execute_when_fake_generic_function_multiple_types_should_success() 
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func::<&str, bool, i32>
+            fn (complex_generic_multiple_types_func)(&'static str, bool, i32) -> String
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &str, b: bool, c: i32) -> String,
@@ -164,7 +164,9 @@ Below is an example for assigning the values to the reference parameters:
 fn test_will_execute_when_fake_multiple_reference_param_function_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(multiple_reference_params_func))
+        .when_called(injectorpp::func!(
+            fn (multiple_reference_params_func)(&mut i32, &mut bool) -> bool
+        ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &mut i32, b: &mut bool) -> bool,
             assign: { *a = 6; *b = true },
@@ -190,7 +192,7 @@ Below is an example for faking a method:
 fn test_will_execute_when_fake_method_with_parameter_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Foo::add))
+        .when_called(injectorpp::func!(fn (Foo::add)(&Foo, i32) -> i32))
         .will_execute(injectorpp::fake!(
             func_type: fn(f: &Foo, value: i32) -> i32,
             when: f.value > 0,
@@ -213,7 +215,7 @@ fn test_will_execute_when_fake_generic_function_single_type_can_recover() {
         let mut injector = InjectorPP::new();
         injector
             .when_called(injectorpp::func!(
-                complex_generic_single_type_always_fail_func::<&str>
+                fn (complex_generic_single_type_always_fail_func)(&'static str) -> std::io::Result<()>
             ))
             .will_execute(injectorpp::fake!(
                 func_type: fn(path: &str) -> std::io::Result<()>,
@@ -251,8 +253,8 @@ pub fn fake_path_exists() -> bool {
 fn test_will_execute_raw_when_fake_file_dependency_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Path::exists))
-        .will_execute_raw(injectorpp::func!(fake_path_exists));
+        .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
+        .will_execute_raw(injectorpp::func!(fn (fake_path_exists)(&Path) -> bool));
 
     let test_path = "/path/that/does/not/exist";
     let result = Path::new(test_path).exists();
@@ -274,7 +276,7 @@ fn test_will_execute_raw_when_fake_no_return_function_use_closure_should_success
 
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return))
+        .when_called(injectorpp::func!(fn (func_no_return)()))
         .will_execute_raw(injectorpp::closure!(fake_closure, fn()));
 
     func_no_return();
@@ -307,9 +309,10 @@ async fn test_simple_async_func_should_success() {
     let mut injector = InjectorPP::new();
 
     injector
-        .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_one(
-            u32::default()
-        )))
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_u32_add_one(u32::default()),
+            u32
+        ))
         .will_return_async(injectorpp::async_return!(123, u32));
 
     let x = simple_async_func_u32_add_one(1).await;
@@ -320,9 +323,10 @@ async fn test_simple_async_func_should_success() {
     assert_eq!(x, 3);
 
     injector
-        .when_called_async(injectorpp::async_func!(simple_async_func_u32_add_two(
-            u32::default()
-        )))
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_u32_add_two(u32::default()),
+            u32
+        ))
         .will_return_async(injectorpp::async_return!(678, u32));
 
     // Now because it's faked the return value should be changed
@@ -334,9 +338,10 @@ async fn test_simple_async_func_should_success() {
     assert_eq!(y, true);
 
     injector
-        .when_called_async(injectorpp::async_func!(simple_async_func_bool(
-            bool::default()
-        )))
+        .when_called_async(injectorpp::async_func!(
+            simple_async_func_bool(bool::default()),
+            bool
+        ))
         .will_return_async(injectorpp::async_return!(false, bool));
 
     // Now because it's faked the return value should be false
@@ -373,7 +378,7 @@ async fn test_complex_struct_async_func_without_param_should_success() {
 
         let mut injector = InjectorPP::new();
         injector
-            .when_called_async(injectorpp::async_func!(temp_client.get()))
+            .when_called_async(injectorpp::async_func!(temp_client.get(), String))
             .will_return_async(injectorpp::async_return!(
                 "Fake GET response".to_string(),
                 String
@@ -417,9 +422,11 @@ fn test_fake_shm_open_should_return_fixed_fd() {
     // Fake shm_open to always return file descriptor 32
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(shm_open))
+        .when_called(injectorpp::func!(
+            unsafe{} extern "C" fn (shm_open)(*const c_char, c_int, c_uint) -> c_int
+        ))
         .will_execute(injectorpp::fake!(
-            func_type: fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
+            func_type: unsafe extern "C" fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
             returns: 32
         ));
 
@@ -444,7 +451,8 @@ async fn test_azure_http_client_always_return_200() {
     let mut injector = InjectorPP::new();
     injector
         .when_called_async(injectorpp::async_func!(
-            temp_client.execute_request(&mut temp_req)
+            temp_client.execute_request(&mut temp_req),
+            std::result::Result<RawResponse, Error>
         ))
         .will_return_async(injectorpp::async_return!(
             // always return an Ok(RawResponse) with status 200
