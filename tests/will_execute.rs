@@ -440,7 +440,7 @@ fn test_will_execute_when_fake_method_can_recover() {
 }
 
 #[test]
-fn test_will_execute_fake_unsafe_non_unit_returns_only() {
+fn test_will_execute_fake_unsafe_non_unit_returns_only_should_success() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(unsafe_non_unit, unsafe fn(i32) -> i32))
@@ -458,7 +458,7 @@ fn test_will_execute_fake_unsafe_non_unit_returns_only() {
 #[should_panic(
     expected = "Fake function was expected to be called 2 time(s), but it is actually called 3 time(s)"
 )]
-fn test_will_execute_fake_unsafe_non_unit_returns_and_times() {
+fn test_will_execute_fake_unsafe_non_unit_returns_and_times_over_called_should_panic() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(unsafe_non_unit, unsafe fn(i32) -> i32))
@@ -478,7 +478,7 @@ fn test_will_execute_fake_unsafe_non_unit_returns_and_times() {
 }
 
 #[test]
-fn test_will_execute_fake_unsafe_unit_without_times() {
+fn test_will_execute_fake_unsafe_unit_without_times_should_success() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
@@ -498,7 +498,7 @@ fn test_will_execute_fake_unsafe_unit_without_times() {
 #[should_panic(
     expected = "Fake function was expected to be called 1 time(s), but it is actually called 2 time(s)"
 )]
-fn test_will_execute_fake_unsafe_unit_with_times() {
+fn test_will_execute_fake_unsafe_unit_with_times_over_called_should_panic() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
@@ -515,6 +515,63 @@ fn test_will_execute_fake_unsafe_unit_with_times() {
     let result = std::panic::catch_unwind(|| unsafe {
         let mut val2 = 5;
         unsafe_unit(&mut val2)
+    });
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_will_execute_fake_unsafe_unit_with_assign_only_should_success() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .will_execute(injectorpp::fake!(
+            func_type: unsafe fn(x: &mut i32) -> (),
+            assign: { *x += 5 }
+        ));
+
+    let mut val = 0;
+
+    unsafe { unsafe_unit(&mut val) };
+    assert_eq!(val, 5);
+}
+
+#[test]
+fn test_will_execute_fake_unsafe_unit_with_assign_and_times_should_success() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .will_execute(injectorpp::fake!(
+            func_type: unsafe fn(x: &mut i32) -> (),
+            assign: { *x += 2 },
+            times: 2
+        ));
+
+    let mut val = 1;
+    unsafe { unsafe_unit(&mut val) };
+    unsafe { unsafe_unit(&mut val) };
+
+    assert_eq!(val, 5);
+}
+
+#[test]
+#[should_panic(expected = "Fake function was expected to be called 2 time(s)")]
+fn test_will_execute_fake_unsafe_unit_assign_and_times_over_called_should_panic() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(unsafe_unit, unsafe fn(&mut i32) -> ()))
+        .will_execute(injectorpp::fake!(
+            func_type: unsafe fn(x: &mut i32) -> (),
+            assign: { *x += 3 },
+            times: 2
+        ));
+
+    let mut val = 0;
+    unsafe { unsafe_unit(&mut val) };
+    unsafe { unsafe_unit(&mut val) };
+
+    let result = std::panic::catch_unwind(|| unsafe {
+        let mut val = 0;
+        unsafe_unit(&mut val)
     });
     assert!(result.is_err());
 }

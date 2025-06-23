@@ -586,6 +586,51 @@ macro_rules! fake {
         let raw_ptr = f as *const ();
         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
+    // With assign and returns for unsafe fn
+    (
+        func_type: unsafe fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        assign: { $($assign:tt)* },
+        returns: $ret_val:expr
+    ) => {{
+        let verifier = CallCountVerifier::Dummy;
+        unsafe fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if true {
+                { $($assign)* }
+                $ret_val
+            } else {
+                unreachable!()
+            }
+        }
+        let f: unsafe fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With assign, returns, and times for unsafe fn
+    (
+        func_type: unsafe fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        assign: { $($assign:tt)* },
+        returns: $ret_val:expr,
+        times: $expected:expr
+    ) => {{
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        unsafe fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if true {
+                let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                if prev >= $expected {
+                    panic!("Fake function called more times than expected");
+                }
+                { $($assign)* }
+                $ret_val
+            } else {
+                unreachable!()
+            }
+        }
+        let f: unsafe fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
     // === NORMAL UNSAFE UNIT RETURNING FUNCTIONS ===
     // With times for unsafe fn
     (
@@ -609,6 +654,49 @@ macro_rules! fake {
         let f: unsafe fn($($arg_ty),*) -> () = fake;
         let raw_ptr = f as *const ();
         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With assign only
+    (
+        func_type: unsafe fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        assign: { $($assign:tt)* }
+    ) => {{
+        let verifier = CallCountVerifier::Dummy;
+        unsafe fn fake($($arg_name: $arg_ty),*) -> () {
+            if true {
+                { $($assign)* }
+            } else {
+                unreachable!()
+            }
+        }
+        let f: unsafe fn($($arg_ty),*) -> () = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With assign and times
+    (
+        func_type: unsafe fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        assign: { $($assign:tt)* },
+        times: $expected:expr
+    ) => {{
+
+        use std::sync::atomic::{AtomicUsize, Ordering};
+         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         unsafe fn fake($($arg_name: $arg_ty),*) -> () {
+             if true {
+                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                 if prev >= $expected {
+                     panic!("Fake function called more times than expected");
+                 }
+                 { $($assign)* }
+                 ()
+             } else {
+                 panic!("Fake function called with unexpected arguments");
+             }
+         }
+         let f: unsafe fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // Without times for unsafe fn
     (
