@@ -430,5 +430,128 @@
 //!     assert_eq!(result, "GET https://test.com".to_string());
 //! }
 //! ```
+//!
+//! ## Fake system functions
+//!
+//! Traditionally, system functions could cause the code non-unit testable immediately. It's also one of the test challenges in the projects rely on low level system apis. Now with injectorpp, system function can be easily faked. Below is an example:
+//!
+//! ```rust
+//! use std::os::raw::{c_char, c_int, c_void};
+//!
+//! use injectorpp::interface::injector::*;
+//! use std::ffi::{CStr, CString};
+//!
+//! extern "C" {
+//!     fn getenv(name: *const c_char) -> *mut c_char;
+//! }
+//!
+//! let mut injector = InjectorPP::new();
+//! injector
+//!     .when_called(injectorpp::func!(
+//!         unsafe{} extern "C" fn (getenv)(*const c_char) -> *mut c_char
+//!     ))
+//!     .will_execute(injectorpp::fake!(
+//!         func_type: unsafe extern "C" fn(_name: *const c_char) -> *mut c_char,
+//!         returns: CString::new("VALUE").unwrap().into_raw()
+//!     ));
+//!
+//! let name = CString::new("ANY").unwrap();
+//! let result = unsafe { getenv(name.as_ptr()) };
+//! let s = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+//! assert_eq!(s, "VALUE");
+//! ```
+//!
+//! ## Usafe API
+//!
+//! `when_called_unchecked` and `will_execute_raw_unchecked` are the unsafe versions of `when_called` and `will_execute_raw`. They allow you to bypass type check but you need to ensure the safety yourself.
+//!
+//! ```rust
+//! use injectorpp::interface::injector::*;
+//! use std::path::Path;
+//!
+//! let mut injector = InjectorPP::new();
+//!
+//! pub fn fake_path_exists(_path: &Path) -> bool {
+//!     println!("fake_path_exists executed.");
+//!     true
+//! }
+//!
+//! unsafe {
+//!     injector
+//!         .when_called_unchecked(injectorpp::func_unchecked!(Path::exists))
+//!         .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_path_exists));
+//! }
+//!
+//! let test_path = "/path/that/does/not/exist";
+//! let result = Path::new(test_path).exists();
+//!
+//! assert_eq!(result, true);
+//! ```
+//!
+//! Similarly, `when_called_async_unchecked` and `will_return_async_unchecked` are the unsafe versions for async functions.
+//!
+//! ```rust
+//! use injectorpp::interface::injector::*;
+//!
+//! async fn simple_async_func_u32_add_one(x: u32) -> u32 {
+//!     x + 1
+//! }
+//!
+//! async fn simple_async_func_u32_add_two(x: u32) -> u32 {
+//!     x + 2
+//! }
+//!
+//! async fn simple_async_func_bool(x: bool) -> bool {
+//!     x
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let mut injector = InjectorPP::new();
+//!
+//!     unsafe {
+//!         injector
+//!             .when_called_async_unchecked(injectorpp::async_func_unchecked!(
+//!                 simple_async_func_u32_add_one(u32::default())
+//!             ))
+//!             .will_return_async_unchecked(injectorpp::async_return_unchecked!(123, u32));
+//!     }
+//!
+//!     let x = simple_async_func_u32_add_one(1).await;
+//!     assert_eq!(x, 123);
+//!
+//!     // simple_async_func_u32_add_two should not be affected
+//!     let x = simple_async_func_u32_add_two(1).await;
+//!     assert_eq!(x, 3);
+//!
+//!     unsafe {
+//!         injector
+//!             .when_called_async_unchecked(injectorpp::async_func_unchecked!(
+//!                 simple_async_func_u32_add_two(u32::default())
+//!             ))
+//!             .will_return_async_unchecked(injectorpp::async_return_unchecked!(678, u32));
+//!     }
+//!
+//!     // Now because it's faked the return value should be changed
+//!     let x = simple_async_func_u32_add_two(1).await;
+//!     assert_eq!(x, 678);
+//!
+//!     // simple_async_func_bool should not be affected
+//!     let y = simple_async_func_bool(true).await;
+//!     assert_eq!(y, true);
+//!
+//!     unsafe {
+//!         injector
+//!             .when_called_async_unchecked(injectorpp::async_func_unchecked!(simple_async_func_bool(
+//!                 bool::default()
+//!             )))
+//!             .will_return_async_unchecked(injectorpp::async_return_unchecked!(false, bool));
+//!     }
+//!
+//!     // Now because it's faked the return value should be false
+//!     let y = simple_async_func_bool(true).await;
+//!     assert_eq!(y, false);
+//! }
+//! ```
 mod injector_core;
 pub mod interface;

@@ -1,12 +1,12 @@
 use std::os::raw::{c_char, c_int, c_void};
 
+use injectorpp::interface::injector::*;
+use std::ffi::{CStr, CString};
+
 extern "C" {
     fn getenv(name: *const c_char) -> *mut c_char;
     fn memset(s: *mut c_void, c: c_int, n: usize) -> *mut c_void;
 }
-
-use injectorpp::interface::injector::*;
-use std::ffi::{CStr, CString};
 
 #[test]
 fn test_fake_getenv_returns_custom_pointer() {
