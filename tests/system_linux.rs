@@ -64,3 +64,30 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
     let fd_ok = unsafe { shm_open(ok_name.as_ptr(), 0, 0o600) };
     assert_eq!(fd_ok, 100);
 }
+
+#[test]
+fn test_fake_shm_open_with_limited_times() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(
+            shm_open,
+            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
+        ))
+        .will_execute(injectorpp::fake!(
+            func_type: unsafe extern "C" fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
+            returns: 7,
+            times: 2
+        ));
+
+    let name = CString::new("/test").unwrap();
+    // First two calls succeed
+    unsafe {
+        assert_eq!(shm_open(name.as_ptr(), 0, 0), 7);
+        assert_eq!(shm_open(name.as_ptr(), 0, 0), 7);
+    }
+    // Third call should panic due to times limit
+    let result = std::panic::catch_unwind(|| unsafe {
+        shm_open(name.as_ptr(), 0, 0);
+    });
+    assert!(result.is_err());
+}
