@@ -54,8 +54,8 @@ fn test_will_execute_raw_when_fake_no_return_function_should_success() {
 
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return, fn()))
-        .will_execute_raw(injectorpp::func!(fake_func_no_return, fn()));
+        .when_called(injectorpp::func!(fn (func_no_return)()))
+        .will_execute_raw(injectorpp::func!(fn (fake_func_no_return)()));
 
     func_no_return();
 
@@ -74,7 +74,7 @@ fn test_will_execute_raw_when_fake_no_return_function_use_closure_should_success
 
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(func_no_return, fn()))
+        .when_called(injectorpp::func!(fn (func_no_return)()))
         .will_execute_raw(injectorpp::closure!(fake_closure, fn()));
 
     func_no_return();
@@ -94,8 +94,7 @@ fn test_will_execute_raw_when_fake_generic_function_single_type_should_success()
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_single_type_always_fail_func,
-            fn(&'static str) -> std::io::Result<()>
+            fn (complex_generic_single_type_always_fail_func)(&'static str) -> std::io::Result<()>
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,
@@ -165,8 +164,7 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_with_differen
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func,
-            fn(&'static str, bool, i32) -> String
+            fn (complex_generic_multiple_types_func)(&'static str, bool, i32) -> String
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,

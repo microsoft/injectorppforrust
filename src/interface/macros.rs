@@ -27,6 +27,10 @@ macro_rules! func {
     (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, fn($($arg_ty),*) -> $ret)
     }};
+
+    (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, fn($($arg_ty),*))
+    }};
 }
 
 /// Converts a function to a `FuncPtr`.
