@@ -28,7 +28,7 @@ fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
 fn test_will_return_boolean_mismatched_type_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(return_string, fn() -> String))
+        .when_called(injectorpp::func!(fn (return_string)() -> String))
         .will_return_boolean(true);
 }
 
@@ -37,7 +37,7 @@ fn test_will_return_boolean_mismatched_type_should_panic() {
 fn test_will_execute_when_function_signature_mismatch_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+        .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
         .will_execute(injectorpp::fake!(
             func_type: fn(_path: &str) -> bool,
             returns: true
@@ -50,8 +50,7 @@ fn test_will_execute_when_generic_function_multiple_types_signature_mismatch_sho
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            complex_generic_multiple_types_func,
-            fn(&'static str, bool, i32) -> String
+            fn (complex_generic_multiple_types_func)(&'static str, bool, i32) -> String
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &str, b: bool) -> String,
@@ -66,7 +65,7 @@ fn test_will_execute_when_generic_function_multiple_types_signature_mismatch_sho
 fn test_will_execute_null_pointer_should_panic() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(foo, fn()))
+        .when_called(injectorpp::func!(fn (foo)()))
         .will_execute((
             unsafe {
                 FuncPtr::new(std::ptr::null(), {

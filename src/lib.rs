@@ -42,7 +42,7 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(fs::create_dir_all, fn(&'static str) -> std::io::Result<()>))
+//!     .when_called(injectorpp::func!(fn (fs::create_dir_all)(&'static str) -> std::io::Result<()>))
 //!     .will_execute(injectorpp::fake!(
 //!         func_type: fn(path: &str) -> std::io::Result<()>,
 //!         when: path == "/tmp/target_files",
@@ -95,7 +95,7 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+//!     .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
 //!     .will_return_boolean(true);
 //!
 //! assert!(Path::new("/not/exist").exists());
@@ -125,7 +125,7 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
+//!     .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
 //!     .will_execute(injectorpp::fake!(
 //!         func_type: fn(_path: &Path) -> bool,
 //!         returns: true
@@ -150,8 +150,7 @@
 //! let mut injector = InjectorPP::new();
 //! injector
 //!     .when_called(injectorpp::func!(
-//!         complex_generic_multiple_types_func,
-//!         fn(&'static str, bool, i32) -> String
+//!         fn (complex_generic_multiple_types_func)(&'static str, bool, i32) -> String
 //!     ))
 //!     .will_execute(injectorpp::fake!(
 //!         func_type: fn(a: &str, b: bool, c: i32) -> String,
@@ -179,7 +178,7 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(multiple_reference_params_func, fn(&mut i32, &mut bool) -> bool))
+//!     .when_called(injectorpp::func!(fn (multiple_reference_params_func)(&mut i32, &mut bool) -> bool))
 //!     .will_execute(injectorpp::fake!(
 //!         func_type: fn(a: &mut i32, b: &mut bool) -> bool,
 //!         assign: { *a = 6; *b = true },
@@ -216,7 +215,7 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(Foo::add, fn(&Foo, i32) -> i32))
+//!     .when_called(injectorpp::func!(fn (Foo::add)(&Foo, i32) -> i32))
 //!     .will_execute(injectorpp::fake!(
 //!         func_type: fn(f: &Foo, value: i32) -> i32,
 //!         when: f.value > 0,
@@ -243,8 +242,7 @@
 //!     let mut injector = InjectorPP::new();
 //!     injector
 //!         .when_called(injectorpp::func!(
-//!             complex_generic_single_type_always_fail_func,
-//!             fn(&'static str) -> std::io::Result<()>
+//!             fn (complex_generic_single_type_always_fail_func)(&'static str) -> std::io::Result<()>
 //!         ))
 //!         .will_execute(injectorpp::fake!(
 //!             func_type: fn(path: &str) -> std::io::Result<()>,
@@ -278,8 +276,8 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(Path::exists, fn(&Path) -> bool))
-//!     .will_execute_raw(injectorpp::func!(fake_path_exists, fn(&Path) -> bool));
+//!     .when_called(injectorpp::func!(fn (Path::exists)(&Path) -> bool))
+//!     .will_execute_raw(injectorpp::func!(fn (fake_path_exists)(&Path) -> bool));
 //!
 //! let test_path = "/path/that/does/not/exist";
 //! let result = Path::new(test_path).exists();
@@ -302,7 +300,7 @@
 //!
 //! let mut injector = InjectorPP::new();
 //! injector
-//!     .when_called(injectorpp::func!(func_no_return, fn()))
+//!     .when_called(injectorpp::func!(fn (func_no_return)()))
 //!     .will_execute_raw(injectorpp::closure!(fake_closure, fn()));
 //!
 //! func_no_return();

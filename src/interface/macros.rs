@@ -22,6 +22,36 @@ macro_rules! func {
 
         unsafe { FuncPtr::new(ptr, sig) }
     }};
+
+    // Simplified fn with return
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> $ret)
+    }};
+
+    // Simplified fn with unit return
+    (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, fn($($arg_ty),*))
+    }};
+
+    // Simplified unsafe fn with return
+    (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
+    }};
+
+    // Simplified unsafe fn with unit return
+    (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
+    }};
+
+    // Simplified unsafe extern "C" fn with return
+    (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
+    }};
+
+    // Simplified unsafe extern "C" fn with unit return
+    (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
+    }};
 }
 
 /// Converts a function to a `FuncPtr`.
