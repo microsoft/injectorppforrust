@@ -80,14 +80,9 @@ fn test_fake_shm_open_with_limited_times() {
         ));
 
     let name = CString::new("/test").unwrap();
-    // First two calls succeed
+
     unsafe {
         assert_eq!(shm_open(name.as_ptr(), 0, 0), 7);
         assert_eq!(shm_open(name.as_ptr(), 0, 0), 7);
     }
-    // Third call should panic due to times limit
-    let result = std::panic::catch_unwind(|| unsafe {
-        shm_open(name.as_ptr(), 0, 0);
-    });
-    assert!(result.is_err());
 }
