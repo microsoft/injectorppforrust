@@ -430,5 +430,35 @@
 //!     assert_eq!(result, "GET https://test.com".to_string());
 //! }
 //! ```
+//!
+//! `Fake system functions`
+//!
+//! Traditionally, system functions could cause the code non-unit testable immediately. It's also one of the test challenges in the projects rely on low level system apis. Now with injectorpp, system function can be easily faked. Below is an example:
+//!
+//! ```rust
+//! use std::os::raw::{c_char, c_int, c_void};
+//!
+//! use injectorpp::interface::injector::*;
+//! use std::ffi::{CStr, CString};
+//!
+//! extern "C" {
+//!     fn getenv(name: *const c_char) -> *mut c_char;
+//! }
+//!
+//! let mut injector = InjectorPP::new();
+//! injector
+//!     .when_called(injectorpp::func!(
+//!         unsafe{} extern "C" fn (getenv)(*const c_char) -> *mut c_char
+//!     ))
+//!     .will_execute(injectorpp::fake!(
+//!         func_type: unsafe extern "C" fn(_name: *const c_char) -> *mut c_char,
+//!         returns: CString::new("VALUE").unwrap().into_raw()
+//!     ));
+//!
+//! let name = CString::new("ANY").unwrap();
+//! let result = unsafe { getenv(name.as_ptr()) };
+//! let s = unsafe { CStr::from_ptr(result).to_str().unwrap() };
+//! assert_eq!(s, "VALUE");
+//! ```
 mod injector_core;
 pub mod interface;

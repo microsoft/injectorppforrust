@@ -15,8 +15,7 @@ fn test_fake_shm_open_should_return_fixed_fd() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            shm_open,
-            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
+            unsafe{} fn extern "C" (shm_open)(*const c_char, c_int, c_uint) -> c_int
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
@@ -34,8 +33,7 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            shm_open,
-            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
+            unsafe{} fn extern "C" (shm_open)(*const c_char, c_int, c_uint) -> c_int
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
@@ -52,8 +50,7 @@ fn test_fake_shm_open_should_return_error_for_specific_name() {
     // The default behavior (not matched by 'when') will panic, so let's add a second fake for the other case:
     injector
         .when_called(injectorpp::func!(
-            shm_open,
-            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
+            unsafe{} fn extern "C" (shm_open)(*const c_char, c_int, c_uint) -> c_int
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
@@ -70,8 +67,7 @@ fn test_fake_shm_open_with_limited_times() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            shm_open,
-            unsafe extern "C" fn(*const c_char, c_int, c_uint) -> c_int
+            unsafe{} fn extern "C" (shm_open)(*const c_char, c_int, c_uint) -> c_int
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(_name: *const c_char, _oflag: c_int, _mode: c_uint) -> c_int,
