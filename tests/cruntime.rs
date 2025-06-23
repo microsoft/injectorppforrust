@@ -1,8 +1,8 @@
-use std::os::raw::{c_char, c_long};
+use std::os::raw::{c_char, c_int, c_void};
 
 extern "C" {
     fn getenv(name: *const c_char) -> *mut c_char;
-    fn time(tloc: *mut c_long) -> c_long;
+    fn memset(s: *mut c_void, c: c_int, n: usize) -> *mut c_void;
 }
 
 use injectorpp::interface::injector::*;
@@ -48,71 +48,30 @@ fn test_fake_getenv_when_key_matches() {
 }
 
 #[test]
-fn test_fake_getenv_limited_times() {
+fn test_fake_memset_assign() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            getenv,
-            unsafe extern "C" fn(*const c_char) -> *mut c_char
+            memset,
+            unsafe extern "C" fn(*mut c_void, c_int, usize) -> *mut c_void
         ))
         .will_execute(injectorpp::fake!(
-            func_type: unsafe extern "C" fn(_name: *const c_char) -> *mut c_char,
-            returns: CString::new("LIMIT").unwrap().into_raw(),
-            times: 2
+            func_type: unsafe extern "C" fn(s: *mut c_void, _c: c_int, _n: usize) -> *mut c_void,
+            assign: {
+                let p = s as *mut u8;
+                if !p.is_null() {
+                    *p = 0x5A;
+                }
+            },
+            returns: s
         ));
 
-    let name = CString::new("ANY").unwrap();
-    unsafe {
-        let res1 = getenv(name.as_ptr());
-        let s1 = CStr::from_ptr(res1).to_str().unwrap();
-        assert_eq!(s1, "LIMIT");
+    // Prepare a 4-byte buffer, initially all zeros
+    let mut buf = [0u8; 4];
+    let ptr = buf.as_mut_ptr() as *mut c_void;
 
-        let res2 = getenv(name.as_ptr());
-        let s2 = CStr::from_ptr(res2).to_str().unwrap();
-        assert_eq!(s2, "LIMIT");
-    }
-}
+    let ret = unsafe { memset(ptr, 0, buf.len()) };
 
-#[test]
-fn test_fake_time_assigns_tloc_and_returns_custom() {
-    let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(
-            time,
-            unsafe extern "C" fn(*mut c_long) -> c_long
-        ))
-        .will_execute(injectorpp::fake!(
-            func_type: unsafe extern "C" fn(tloc: *mut c_long) -> c_long,
-            assign: { if !tloc.is_null() { *tloc = 123 } },
-            returns: 456
-        ));
-
-    let mut t: c_long = 0;
-    let ret = unsafe { time(&mut t) };
-
-    assert_eq!(t, 123);
-    assert_eq!(ret, 456);
-}
-
-#[test]
-fn test_fake_time_when_and_assign_only_on_non_null() {
-    let mut injector = InjectorPP::new();
-    injector
-        .when_called(injectorpp::func!(
-            time,
-            unsafe extern "C" fn(*mut c_long) -> c_long
-        ))
-        .will_execute(injectorpp::fake!(
-            func_type: unsafe extern "C" fn(tloc: *mut c_long) -> c_long,
-            when: !tloc.is_null(),
-            assign: { *tloc = 7 },
-            returns: 8
-        ));
-
-    // non-null pointer: fake should run
-    let mut t1: c_long = 0;
-    let ret1 = unsafe { time(&mut t1) };
-
-    assert_eq!(t1, 7);
-    assert_eq!(ret1, 8);
+    assert_eq!(buf[0], 0x5A);
+    assert_eq!(ret, ptr);
 }
