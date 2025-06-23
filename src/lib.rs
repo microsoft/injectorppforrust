@@ -431,7 +431,7 @@
 //! }
 //! ```
 //!
-//! `Fake system functions`
+//! ## Fake system functions
 //!
 //! Traditionally, system functions could cause the code non-unit testable immediately. It's also one of the test challenges in the projects rely on low level system apis. Now with injectorpp, system function can be easily faked. Below is an example:
 //!
