@@ -1,11 +1,12 @@
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_long};
 
 extern "C" {
     fn getenv(name: *const c_char) -> *mut c_char;
+    fn time(tloc: *mut c_long) -> c_long;
 }
 
-use std::ffi::{CString, CStr};
 use injectorpp::interface::injector::*;
+use std::ffi::{CStr, CString};
 
 #[test]
 fn test_fake_getenv_returns_custom_pointer() {
@@ -70,4 +71,48 @@ fn test_fake_getenv_limited_times() {
         let s2 = CStr::from_ptr(res2).to_str().unwrap();
         assert_eq!(s2, "LIMIT");
     }
+}
+
+#[test]
+fn test_fake_time_assigns_tloc_and_returns_custom() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(
+            time,
+            unsafe extern "C" fn(*mut c_long) -> c_long
+        ))
+        .will_execute(injectorpp::fake!(
+            func_type: unsafe extern "C" fn(tloc: *mut c_long) -> c_long,
+            assign: { if !tloc.is_null() { *tloc = 123 } },
+            returns: 456
+        ));
+
+    let mut t: c_long = 0;
+    let ret = unsafe { time(&mut t) };
+
+    assert_eq!(t, 123);
+    assert_eq!(ret, 456);
+}
+
+#[test]
+fn test_fake_time_when_and_assign_only_on_non_null() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(
+            time,
+            unsafe extern "C" fn(*mut c_long) -> c_long
+        ))
+        .will_execute(injectorpp::fake!(
+            func_type: unsafe extern "C" fn(tloc: *mut c_long) -> c_long,
+            when: !tloc.is_null(),
+            assign: { *tloc = 7 },
+            returns: 8
+        ));
+
+    // non-null pointer: fake should run
+    let mut t1: c_long = 0;
+    let ret1 = unsafe { time(&mut t1) };
+
+    assert_eq!(t1, 7);
+    assert_eq!(ret1, 8);
 }
