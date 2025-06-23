@@ -121,21 +121,28 @@ fn generate_will_execute_jit_code_abs(jit_ptr: *mut u8, target: *const ()) {
 /// The code moves the immediate into w0 and then returns.
 /// Two NOPs are added for padding.
 fn generate_will_return_boolean_jit_code(jit_ptr: *mut u8, value: bool) {
-    let mut asm_code: Vec<u8> = Vec::new();
+    let mut asm_code = [0u8; 8]; // 2 instructions = 2 * 4
+    let mut cursor = 0;
 
     let mut value_bits = [false; 16];
     value_bits[0] = value;
 
     let movz = emit_movz(value_bits, true, u8_to_bits::<2>(0), u8_to_bits::<5>(0));
-
     let ret = emit_ret_x30();
 
-    append_instruction(&mut asm_code, bool_array_to_u32(movz));
-    append_instruction(&mut asm_code, bool_array_to_u32(ret));
+    write_instruction(&mut asm_code, &mut cursor, bool_array_to_u32(movz));
+    write_instruction(&mut asm_code, &mut cursor, bool_array_to_u32(ret));
 
     unsafe {
         inject_asm_code(&asm_code, jit_ptr);
     }
+}
+
+#[inline]
+fn write_instruction(buf: &mut [u8], cursor: &mut usize, instruction: u32) {
+    let bytes = instruction.to_le_bytes();
+    buf[*cursor..*cursor + 4].copy_from_slice(&bytes);
+    *cursor += 4;
 }
 
 fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
