@@ -27,15 +27,16 @@ impl HttpClientTest {
 }
 
 #[tokio::test]
-async fn test_simple_async_func_should_success() {
+async fn test_simple_async_func_unchecked_should_success() {
     let mut injector = InjectorPP::new();
 
-    injector
-        .when_called_async(injectorpp::async_func!(
-            simple_async_func_u32_add_one(u32::default()),
-            u32
-        ))
-        .will_return_async(injectorpp::async_return!(123, u32));
+    unsafe {
+        injector
+            .when_called_async_unchecked(injectorpp::async_func_unchecked!(
+                simple_async_func_u32_add_one(u32::default())
+            ))
+            .will_return_async_unchecked(injectorpp::async_return_unchecked!(123, u32));
+    }
 
     let x = simple_async_func_u32_add_one(1).await;
     assert_eq!(x, 123);
@@ -44,12 +45,13 @@ async fn test_simple_async_func_should_success() {
     let x = simple_async_func_u32_add_two(1).await;
     assert_eq!(x, 3);
 
-    injector
-        .when_called_async(injectorpp::async_func!(
-            simple_async_func_u32_add_two(u32::default()),
-            u32
-        ))
-        .will_return_async(injectorpp::async_return!(678, u32));
+    unsafe {
+        injector
+            .when_called_async_unchecked(injectorpp::async_func_unchecked!(
+                simple_async_func_u32_add_two(u32::default())
+            ))
+            .will_return_async_unchecked(injectorpp::async_return_unchecked!(678, u32));
+    }
 
     // Now because it's faked the return value should be changed
     let x = simple_async_func_u32_add_two(1).await;
@@ -59,12 +61,13 @@ async fn test_simple_async_func_should_success() {
     let y = simple_async_func_bool(true).await;
     assert_eq!(y, true);
 
-    injector
-        .when_called_async(injectorpp::async_func!(
-            simple_async_func_bool(bool::default()),
-            bool
-        ))
-        .will_return_async(injectorpp::async_return!(false, bool));
+    unsafe {
+        injector
+            .when_called_async_unchecked(injectorpp::async_func_unchecked!(simple_async_func_bool(
+                bool::default()
+            )))
+            .will_return_async_unchecked(injectorpp::async_return_unchecked!(false, bool));
+    }
 
     // Now because it's faked the return value should be false
     let y = simple_async_func_bool(true).await;
@@ -72,7 +75,7 @@ async fn test_simple_async_func_should_success() {
 }
 
 #[tokio::test]
-async fn test_complex_struct_async_func_without_param_should_success() {
+async fn test_complex_struct_async_func_unchecked_without_param_should_success() {
     {
         // This is a temporary instance that is needed for async function fake.
         // Parameter does not matter.
@@ -81,12 +84,15 @@ async fn test_complex_struct_async_func_without_param_should_success() {
         };
 
         let mut injector = InjectorPP::new();
-        injector
-            .when_called_async(injectorpp::async_func!(temp_client.get(), String))
-            .will_return_async(injectorpp::async_return!(
-                "Fake GET response".to_string(),
-                String
-            ));
+
+        unsafe {
+            injector
+                .when_called_async_unchecked(injectorpp::async_func_unchecked!(temp_client.get()))
+                .will_return_async_unchecked(injectorpp::async_return_unchecked!(
+                    "Fake GET response".to_string(),
+                    String
+                ));
+        }
 
         // Now the real client will be used and its behavior should be faked
         let real_client = HttpClientTest {
@@ -107,7 +113,7 @@ async fn test_complex_struct_async_func_without_param_should_success() {
 }
 
 #[tokio::test]
-async fn test_complex_struct_async_func_with_param_should_success() {
+async fn test_complex_struct_async_func_unchecked_with_param_should_success() {
     {
         // This is a temporary instance that is needed for async function fake.
         // Parameter does not matter.
@@ -116,15 +122,17 @@ async fn test_complex_struct_async_func_with_param_should_success() {
         };
 
         let mut injector = InjectorPP::new();
-        injector
-            .when_called_async(injectorpp::async_func!(
-                temp_client.post("test payload"),
-                String
-            ))
-            .will_return_async(injectorpp::async_return!(
-                "Fake POST response".to_string(),
-                String
-            ));
+
+        unsafe {
+            injector
+                .when_called_async_unchecked(injectorpp::async_func_unchecked!(
+                    temp_client.post("test payload")
+                ))
+                .will_return_async_unchecked(injectorpp::async_return_unchecked!(
+                    "Fake POST response".to_string(),
+                    String
+                ));
+        }
 
         // Now the real client will be used and its behavior should be faked
         let real_client = HttpClientTest {
