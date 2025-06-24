@@ -386,7 +386,7 @@ fn test_will_execute_when_fake_method_with_output_parameter_no_return_should_suc
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            fn (Foo::add_no_return)(&Foo, i32, &mut i32) -> ()
+            func_type: fn (Foo::add_no_return)(&Foo, i32, &mut i32) -> ()
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(f: &Foo, value: i32, output: &mut i32) -> (),
