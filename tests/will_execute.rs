@@ -529,7 +529,7 @@ fn test_will_execute_fake_unsafe_unit_with_assign_only_should_success() {
 fn test_will_execute_fake_unsafe_unit_with_assign_and_times_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe{} fn (unsafe_unit)(&mut i32) -> ()))
+        .when_called(injectorpp::func!(func_type: unsafe fn (unsafe_unit)(&mut i32) -> ()))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(x: &mut i32) -> (),
             assign: { *x += 2 },
