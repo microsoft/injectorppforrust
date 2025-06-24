@@ -13,7 +13,7 @@ fn test_fake_getenv_returns_custom_pointer() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            func_type: unsafe extern "C" fn(getenv)(*const c_char) -> *mut c_char
+            func_info: unsafe extern "C" fn(getenv)(*const c_char) -> *mut c_char
         ))
         .will_execute(injectorpp::fake!(
             func_type: unsafe extern "C" fn(_name: *const c_char) -> *mut c_char,
