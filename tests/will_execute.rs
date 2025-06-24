@@ -386,7 +386,7 @@ fn test_will_execute_when_fake_method_with_output_parameter_no_return_should_suc
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(
-            fn (Foo::add_no_return)(&Foo, i32, &mut i32) -> ()
+            func_info: fn (Foo::add_no_return)(&Foo, i32, &mut i32) -> ()
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(f: &Foo, value: i32, output: &mut i32) -> (),
@@ -529,7 +529,7 @@ fn test_will_execute_fake_unsafe_unit_with_assign_only_should_success() {
 fn test_will_execute_fake_unsafe_unit_with_assign_and_times_should_success() {
     let mut injector = InjectorPP::new();
     injector
-        .when_called(injectorpp::func!(unsafe{} fn (unsafe_unit)(&mut i32) -> ()))
+        .when_called(injectorpp::func!(func_info: unsafe fn (unsafe_unit)(&mut i32) -> ()))
         .will_execute(injectorpp::fake!(
             func_type: unsafe fn(x: &mut i32) -> (),
             assign: { *x += 2 },

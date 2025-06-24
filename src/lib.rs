@@ -461,7 +461,7 @@
 //! assert_eq!(s, "VALUE");
 //! ```
 //!
-//! ## Usafe API
+//! ## Unsafe API
 //!
 //! `when_called_unchecked` and `will_execute_raw_unchecked` are the unsafe versions of `when_called` and `will_execute_raw`. They allow you to bypass type check but you need to ensure the safety yourself.
 //!

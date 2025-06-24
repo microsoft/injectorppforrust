@@ -24,31 +24,55 @@ macro_rules! func {
     }};
 
     // Simplified fn with return
+    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> $ret)
+    }};
+
     (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, fn($($arg_ty),*) -> $ret)
     }};
 
     // Simplified fn with unit return
+    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, fn($($arg_ty),*))
+    }};
+
     (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
         $crate::func!($f, fn($($arg_ty),*))
     }};
 
     // Simplified unsafe fn with return
+    (func_info: unsafe fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
+    }};
+
     (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
     }};
 
     // Simplified unsafe fn with unit return
+    (func_info: unsafe fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
+    }};
+
     (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
         $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
     }};
 
     // Simplified unsafe extern "C" fn with return
+    (func_info: unsafe extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
+    }};
+
     (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
     }};
 
     // Simplified unsafe extern "C" fn with unit return
+    (func_info: unsafe extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
+    }};
+
     (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
         $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
     }};
