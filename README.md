@@ -470,6 +470,97 @@ async fn test_azure_http_client_always_return_200() {
 }
 ```
 
+## `Usafe API`
+
+`when_called_unchecked` and `will_execute_raw_unchecked` are the unsafe versions of `when_called` and `will_execute_raw`. They allow you to bypass type check but you need to ensure the safety yourself.
+
+```rust
+pub fn fake_path_exists(_path: &Path) -> bool {
+    println!("fake_path_exists executed.");
+    true
+}
+
+#[test]
+fn test_will_execute_raw_unchecked_when_fake_file_dependency_should_success() {
+    let mut injector = InjectorPP::new();
+
+    unsafe {
+        injector
+            .when_called_unchecked(injectorpp::func_unchecked!(Path::exists))
+            .will_execute_raw_unchecked(injectorpp::func_unchecked!(fake_path_exists));
+    }
+
+    let test_path = "/path/that/does/not/exist";
+    let result = Path::new(test_path).exists();
+
+    assert_eq!(result, true);
+}
+```
+
+Similarly, `when_called_async_unchecked` and `will_return_async_unchecked` are the unsafe versions for async functions.
+
+```rust
+async fn simple_async_func_u32_add_one(x: u32) -> u32 {
+    x + 1
+}
+
+async fn simple_async_func_u32_add_two(x: u32) -> u32 {
+    x + 2
+}
+
+async fn simple_async_func_bool(x: bool) -> bool {
+    x
+}
+
+#[tokio::test]
+async fn test_simple_async_func_unchecked_should_success() {
+    let mut injector = InjectorPP::new();
+
+    unsafe {
+        injector
+            .when_called_async_unchecked(injectorpp::async_func_unchecked!(
+                simple_async_func_u32_add_one(u32::default())
+            ))
+            .will_return_async_unchecked(injectorpp::async_return_unchecked!(123, u32));
+    }
+
+    let x = simple_async_func_u32_add_one(1).await;
+    assert_eq!(x, 123);
+
+    // simple_async_func_u32_add_two should not be affected
+    let x = simple_async_func_u32_add_two(1).await;
+    assert_eq!(x, 3);
+
+    unsafe {
+        injector
+            .when_called_async_unchecked(injectorpp::async_func_unchecked!(
+                simple_async_func_u32_add_two(u32::default())
+            ))
+            .will_return_async_unchecked(injectorpp::async_return_unchecked!(678, u32));
+    }
+
+    // Now because it's faked the return value should be changed
+    let x = simple_async_func_u32_add_two(1).await;
+    assert_eq!(x, 678);
+
+    // simple_async_func_bool should not be affected
+    let y = simple_async_func_bool(true).await;
+    assert_eq!(y, true);
+
+    unsafe {
+        injector
+            .when_called_async_unchecked(injectorpp::async_func_unchecked!(simple_async_func_bool(
+                bool::default()
+            )))
+            .will_return_async_unchecked(injectorpp::async_return_unchecked!(false, bool));
+    }
+
+    // Now because it's faked the return value should be false
+    let y = simple_async_func_bool(true).await;
+    assert_eq!(y, false);
+}
+```
+
 # Contributing
 
 This project welcomes contributions and suggestions. Please see the [CONTRIBUTING.md](CONTRIBUTING.md)
