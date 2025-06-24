@@ -62,7 +62,7 @@ Add `injectorpp` to the `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-injectorpp = "0.3.3"
+injectorpp = "0.4.0"
 ```
 
 Below `profile.test` config is recommended to make sure `injectorpp` working correctly in tests. If you have workspace, make sure add this on the top level of `Cargo.toml`:
