@@ -343,7 +343,6 @@ unsafe fn make_memory_writable_and_executable_linux(func: *mut u8) {
     let page_size = sysconf(_SC_PAGESIZE) as usize;
     let addr = func as usize;
     let page_start = addr & !(page_size - 1);
-
     if libc::mprotect(
         page_start as *mut c_void,
         page_size,
