@@ -8,6 +8,9 @@ use crate::injector_core::winapi::*;
 #[cfg(target_os = "linux")]
 use crate::injector_core::linuxapi::*;
 
+#[cfg(target_os = "macos")]
+use crate::injector_core::macosapi::*;
+
 /// A safe wrapper around a raw function pointer.
 ///
 /// `FuncPtrInternal` encapsulates a non-null function pointer and provides safe
@@ -40,9 +43,9 @@ impl FuncPtrInternal {
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
 pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        allocate_jit_memory_linux(src, code_size)
+        allocate_jit_memory_unix(src, code_size)
     }
 
     #[cfg(target_os = "windows")]
@@ -51,20 +54,27 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
     }
 }
 
-#[cfg(target_os = "linux")]
-fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn allocate_jit_memory_unix(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     let max_range: u64 = 0x8000000; // 128MB
     let original_addr = src.as_ptr() as u64;
     let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
     // Start at original_addr - max_range.
     let mut start_address = original_addr.saturating_sub(max_range);
+
+    #[cfg(target_os = "macos")]
+    let flags = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_JIT;
+
+    #[cfg(target_os = "linux")]
+    let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
+
     loop {
         let ptr = unsafe {
             libc::mmap(
                 start_address as *mut c_void,
                 code_size,
                 PROT_READ | PROT_WRITE | PROT_EXEC,
-                libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+                flags,
                 -1,
                 0,
             )
@@ -176,7 +186,7 @@ impl Drop for PatchGuard {
         unsafe {
             patch_function(self.func_ptr, &self.original_bytes[..self.patch_size]);
             if !self.jit_memory.is_null() {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
                 {
                     libc::munmap(self.jit_memory as *mut c_void, self.jit_size);
                 }
@@ -213,6 +223,11 @@ unsafe fn make_memory_writable_and_executable(func: *mut u8) {
     #[cfg(target_os = "windows")]
     {
         make_memory_writable_and_executable_windows(func);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        make_memory_writable_and_executable_macos(func);
     }
 }
 
@@ -251,8 +266,21 @@ unsafe fn make_memory_writable_and_executable_windows(func: *const u8) {
     }
 }
 
+#[cfg(target_os = "macos")]
+unsafe fn make_memory_writable_and_executable_macos(_func: *const u8) {
+    // It's advised to use `pthread_jit_write_protect_np` to toggle write protection on Apple
+    // Silicon. This is configured to run in `inject_asm_code` as that is where the writes occur.
+}
+
 pub(crate) unsafe fn inject_asm_code(asm_code: &[u8], dest: *mut u8) {
+    #[cfg(target_os = "macos")]
+    pthread_jit_write_protect_np(0);
+
     ptr::copy_nonoverlapping(asm_code.as_ptr(), dest, asm_code.len());
+
+    #[cfg(target_os = "macos")]
+    pthread_jit_write_protect_np(1);
+
     clear_cache(dest, dest.add(asm_code.len()));
 }
 
@@ -271,6 +299,12 @@ unsafe fn clear_cache(start: *mut u8, end: *mut u8) {
         if success == 0 {
             panic!("FlushInstructionCache failed");
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let size = end.offset_from(start) as usize;
+        sys_icache_invalidate(start, size);
     }
 
     // On ARM64, explicitly synchronize the CPU pipeline.
