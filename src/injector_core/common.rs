@@ -322,7 +322,7 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
 }
 
 unsafe fn make_memory_writable_and_executable(func: *mut u8) {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(target_os = "linux")]
     {
         make_memory_writable_and_executable_linux(func);
     }
@@ -331,9 +331,14 @@ unsafe fn make_memory_writable_and_executable(func: *mut u8) {
     {
         make_memory_writable_and_executable_windows(func);
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        make_memory_writable_and_executable_macos(func);
+    }
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "linux")]
 unsafe fn make_memory_writable_and_executable_linux(func: *mut u8) {
     let page_size = sysconf(_SC_PAGESIZE) as usize;
     let addr = func as usize;
@@ -369,8 +374,21 @@ unsafe fn make_memory_writable_and_executable_windows(func: *const u8) {
     }
 }
 
+#[cfg(target_os = "macos")]
+unsafe fn make_memory_writable_and_executable_macos(_func: *const u8) {
+    // It's advised to use `pthread_jit_write_protect_np` to toggle write protection on Apple
+    // Silicon. This is configured to run in `inject_asm_code` as that is where the writes occur.
+}
+
 pub(crate) unsafe fn inject_asm_code(asm_code: &[u8], dest: *mut u8) {
+    #[cfg(target_os = "macos")]
+    pthread_jit_write_protect_np(0);
+
     ptr::copy_nonoverlapping(asm_code.as_ptr(), dest, asm_code.len());
+
+    #[cfg(target_os = "macos")]
+    pthread_jit_write_protect_np(1);
+
     clear_cache(dest, dest.add(asm_code.len()));
 }
 
