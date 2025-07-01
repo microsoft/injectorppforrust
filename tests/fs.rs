@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Result;
+use std::io::Write;
 
 #[cfg(target_os = "linux")]
 use std::os::fd::FromRawFd;
@@ -66,7 +67,37 @@ fn test_read_line_fake_result() {
     let mut line = String::new();
 
     let result = reader.read_line(&mut line);
+
     assert!(result.is_ok());
     assert_eq!(line, "Fake line content");
     assert_eq!(result.unwrap(), 17);
+}
+
+#[test]
+fn test_write_all_fake_result() {
+    let mut injector = InjectorPP::new();
+
+    injector
+        .when_called(
+            injectorpp::func!(fn (File::open)(&'static str) -> std::io::Result<std::fs::File>),
+        )
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_path: &'static str) -> std::io::Result<std::fs::File>,
+            returns: Ok(unsafe { create_fake_file_object() })
+        ));
+
+    injector
+        .when_called(injectorpp::func!(fn (File::write_all)(&mut File, &[u8]) -> Result<()>))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_file: &mut File, _buf: &[u8]) -> Result<()>,
+            returns: Ok(())
+        ));
+
+    let file = File::open("/not/exist/path").unwrap();
+    let mut file = file;
+    let data = b"Hello, world!";
+
+    let result = file.write_all(data);
+
+    assert!(result.is_ok());
 }
