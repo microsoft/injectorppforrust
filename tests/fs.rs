@@ -15,7 +15,17 @@ unsafe fn create_fake_file_object() -> File {
     // Create a fake file object using a raw file descriptor
     #[cfg(target_os = "linux")]
     unsafe {
-        File::from_raw_fd(0)
+        // Create a pipe, use the read end, and immediately close the write end
+        let mut fds = [0; 2];
+        if libc::pipe(fds.as_mut_ptr()) != 0 {
+            panic!("Failed to create pipe for fake file");
+        }
+
+        // Close the write end immediately
+        libc::close(fds[1]);
+
+        // Return the read end as a File
+        File::from_raw_fd(fds[0])
     }
 
     #[cfg(target_os = "windows")]
