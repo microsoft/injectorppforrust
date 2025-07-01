@@ -11,6 +11,18 @@ use std::os::fd::FromRawFd;
 #[cfg(target_os = "windows")]
 use std::os::windows::io::FromRawHandle;
 
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn CreatePipe(
+        hReadPipe: *mut *mut std::ffi::c_void,
+        hWritePipe: *mut *mut std::ffi::c_void,
+        lpPipeAttributes: *const std::ffi::c_void,
+        nSize: u32,
+    ) -> i32;
+
+    fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+}
+
 unsafe fn create_fake_file_object() -> File {
     // Create a fake file object using a raw file descriptor
     #[cfg(target_os = "linux")]
@@ -30,7 +42,13 @@ unsafe fn create_fake_file_object() -> File {
 
     #[cfg(target_os = "windows")]
     unsafe {
-        std::fs::File::from_raw_handle(std::ptr::null_mut())
+        let mut read_handle = std::ptr::null_mut();
+        let mut write_handle = std::ptr::null_mut();
+
+        CreatePipe(&mut read_handle, &mut write_handle, std::ptr::null_mut(), 0);
+        CloseHandle(write_handle);
+
+        std::fs::File::from_raw_handle(read_handle)
     }
 }
 
