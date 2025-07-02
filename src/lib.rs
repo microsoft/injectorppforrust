@@ -555,4 +555,3 @@
 //! ```
 mod injector_core;
 pub mod interface;
-pub mod utilities;
