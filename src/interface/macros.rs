@@ -76,6 +76,24 @@ macro_rules! func {
     (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
         $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
     }};
+
+    // Simplified unsafe extern "system" fn with return
+    (func_info: unsafe extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> $ret)
+    }};
+
+    (unsafe{} extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> $ret)
+    }};
+
+    // Simplified unsafe extern "system" fn with unit return
+    (func_info: unsafe extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> ())
+    }};
+
+    (unsafe{} extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> ())
+    }};
 }
 
 /// Converts a function to a `FuncPtr`.
@@ -1050,6 +1068,310 @@ macro_rules! fake {
              if true { () } else { unreachable!() }
          }
          let f: unsafe extern "C" fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // === EXTERN "system" NON-UNIT RETURNING FUNCTIONS ===
+    // With when, assign, returns, and times.
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        when: $cond:expr,
+        assign: { $($assign:tt)* },
+        returns: $ret_val:expr,
+        times: $expected:expr
+    ) => {{
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if $cond {
+                let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                if prev >= $expected {
+                    panic!("Fake function called more times than expected");
+                }
+                { $($assign)* }
+                $ret_val
+            } else {
+                panic!("Fake function called with unexpected arguments");
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With when, assign, and returns
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        when: $cond:expr,
+        assign: { $($assign:tt)* },
+        returns: $ret_val:expr
+    ) => {{
+        let verifier = CallCountVerifier::Dummy;
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if $cond {
+                { $($assign)* }
+                $ret_val
+            } else {
+                panic!("Fake function called with unexpected arguments");
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With when and returns, times
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        when: $cond:expr,
+        returns: $ret_val:expr,
+        times: $expected:expr
+    ) => {{
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if $cond {
+                let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                if prev >= $expected {
+                    panic!("Fake function called more times than expected");
+                }
+                $ret_val
+            } else {
+                panic!("Fake function called with unexpected arguments");
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With assign, returns, and times
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        assign: { $($assign:tt)* },
+        returns: $ret_val:expr,
+        times: $expected:expr
+    ) => {{
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if true {
+                let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                if prev >= $expected {
+                    panic!("Fake function called more times than expected");
+                }
+                { $($assign)* }
+                $ret_val
+            } else {
+                unreachable!()
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With assign and returns
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        assign: { $($assign:tt)* },
+        returns: $ret_val:expr
+    ) => {{
+        let verifier = CallCountVerifier::Dummy;
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if true {
+                { $($assign)* }
+                $ret_val
+            } else {
+                unreachable!()
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With returns and times
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        returns: $ret_val:expr,
+        times: $expected:expr
+    ) => {{
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
+            if true {
+                let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                if prev >= $expected {
+                    panic!("Fake function called more times than expected");
+                }
+                $ret_val
+            } else {
+                unreachable!()
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
+        returns: $ret_val:expr
+    ) => {{
+         let verifier = CallCountVerifier::Dummy;
+         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
+             if true {
+                 $ret_val
+             } else {
+                 unreachable!()
+             }
+         }
+         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // === EXTERN "system" UNIT RETURNING FUNCTIONS ===
+    // With when, assign, and times
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        when: $cond:expr,
+        assign: { $($assign:tt)* },
+        times: $expected:expr
+    ) => {{
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> () {
+            if $cond {
+                let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                if prev >= $expected {
+                    panic!("Fake function called more times than expected");
+                }
+                { $($assign)* }
+            } else {
+                panic!("Fake function called with unexpected arguments");
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With when and times (no assign).
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        when: $cond:expr,
+        times: $expected:expr
+    ) => {{
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> () {
+            if $cond {
+                let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                if prev >= $expected {
+                    panic!("Fake function called more times than expected");
+                }
+                ()
+            } else {
+                panic!("Fake function called with unexpected arguments");
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With when and assign (no times).
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        when: $cond:expr,
+        assign: { $($assign:tt)* }
+    ) => {{
+        let verifier = CallCountVerifier::Dummy;
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> () {
+            if $cond {
+                { $($assign)* }
+            } else {
+                panic!("Fake function called with unexpected arguments");
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With assign only
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        assign: { $($assign:tt)* }
+    ) => {{
+        let verifier = CallCountVerifier::Dummy;
+        unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> () {
+            if true {
+                { $($assign)* }
+            } else {
+                unreachable!()
+            }
+        }
+        let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
+        let raw_ptr = f as *const ();
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With assign and times
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        assign: { $($assign:tt)* },
+        times: $expected:expr
+    ) => {{
+
+        use std::sync::atomic::{AtomicUsize, Ordering};
+         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> () {
+             if true {
+                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                 if prev >= $expected {
+                     panic!("Fake function called more times than expected");
+                 }
+                 { $($assign)* }
+                 ()
+             } else {
+                 panic!("Fake function called with unexpected arguments");
+             }
+         }
+         let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With times only (when defaults to true, no assign).
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
+        times: $expected:expr
+    ) => {{
+         use std::sync::atomic::{AtomicUsize, Ordering};
+         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> () {
+             if true {
+                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                 if prev >= $expected {
+                     panic!("Fake function called more times than expected");
+                 }
+                 ()
+             } else {
+                 unreachable!()
+             }
+         }
+         let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
+         let raw_ptr = f as *const ();
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+    // With neither (no when, no times, no assign, no returns).
+    (
+        func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> ()
+    ) => {{
+         let verifier = CallCountVerifier::Dummy;
+         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> () {
+             if true { () } else { unreachable!() }
+         }
+         let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
          (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
