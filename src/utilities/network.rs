@@ -507,15 +507,22 @@ mod tests {
 
     #[test]
     fn test_response_bytes_generation() {
+        let json_body = r#"{"id": 123}"#;
         let config = HttpMockConfig::new()
             .with_status(HttpStatus::Created)
-            .with_json_body(r#"{"id": 123}"#);
+            .with_json_body(json_body);
 
         let response_bytes = config.to_response_bytes();
         let response_str = String::from_utf8_lossy(&response_bytes);
 
+        // Basic structure checks
         assert!(response_str.starts_with("HTTP/1.1 201 Created"));
-        assert!(response_str.contains("Content-Length: 10"));
         assert!(response_str.contains(r#"{"id": 123}"#));
+
+        // Check that Content-Length is present and correct
+        let expected_content_length = json_body.len();
+        let content_length_line = format!("Content-Length: {}", expected_content_length);
+
+        assert!(response_str.contains(&content_length_line));
     }
 }
