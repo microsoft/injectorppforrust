@@ -5,7 +5,7 @@ use std::io::BufReader;
 use std::io::Result;
 use std::io::Write;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::os::fd::FromRawFd;
 
 #[cfg(target_os = "windows")]
@@ -25,7 +25,7 @@ extern "system" {
 
 unsafe fn create_fake_file_object() -> File {
     // Create a fake file object using a raw file descriptor
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     unsafe {
         // Create a pipe, use the read end, and immediately close the write end
         let mut fds = [0; 2];
