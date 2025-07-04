@@ -103,20 +103,28 @@ fn fake_get_queued_completion_status_ex(
     dw_milliseconds: u32,
     f_alertable: i32,
 ) -> i32 {
-    // Simulate that we have completion events immediately available
-    if !completion_port_entries.is_null() && ul_count > 0 && !ul_num_entries_removed.is_null() {
-        unsafe {
-            // Create a fake completion entry that indicates the socket is ready
-            let entry = &mut *completion_port_entries;
-            entry.lpCompletionKey = 1; // Some fake completion key
-            entry.lpOverlapped = std::ptr::null_mut(); // Custom event (no overlapped)
-            entry.dwNumberOfBytesTransferred = 0;
-            entry.Internal = 0;
-            
-            *ul_num_entries_removed = 1; // One event available
+    static mut CALL_COUNT: i32 = 0;
+    
+    unsafe {
+        CALL_COUNT += 1;
+        
+        if !ul_num_entries_removed.is_null() {
+            // Sometimes return events, sometimes don't, but always succeed
+            if CALL_COUNT % 3 == 0 && !completion_port_entries.is_null() && ul_count > 0 {
+                let entry = &mut *completion_port_entries;
+                entry.lpCompletionKey = FAKE_SOCKET_COUNTER as usize;
+                entry.lpOverlapped = std::ptr::null_mut();
+                entry.dwNumberOfBytesTransferred = 0;
+                entry.Internal = 0;
+                
+                *ul_num_entries_removed = 1;
+            } else {
+                *ul_num_entries_removed = 0;
+            }
         }
+        
+        return 1; // Always return success
     }
-    return 1; // Success (non-zero)
 }
 
 #[tokio::test]
