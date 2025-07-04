@@ -6,6 +6,12 @@ use std::{io::Write, net::TcpStream as StdTcpStream};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
+use http_body_util::BodyExt;
+use hyper::{body::Incoming as IncomingBody, Request, Response};
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioIo;
+
 fn make_unconnected_stream() -> std::io::Result<TcpStream> {
     // 1) create a raw socket
     let sock = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
@@ -85,4 +91,92 @@ async fn test_tokio_tcp_connect_with_payload_should_success() {
         .expect("failed to read from stream");
 
     assert_eq!(&buf, b"MOCKED PAYLOAD");
+}
+
+#[tokio::test]
+async fn test_hyper_real_http_request() {
+    use std::net::SocketAddr;
+    use std::net::ToSocketAddrs;
+    let mut injector = InjectorPP::new();
+
+    type ToSocketAddrsFn =
+        fn(&(&'static str, u16)) -> std::io::Result<std::vec::IntoIter<SocketAddr>>;
+    let fn_ptr: ToSocketAddrsFn = <(&'static str, u16) as ToSocketAddrs>::to_socket_addrs;
+
+    unsafe {
+        injector
+            .when_called_unchecked(injectorpp::func_unchecked!(fn_ptr))
+            .will_execute_raw_unchecked(injectorpp::closure_unchecked!(
+                |_addr: &(&str, u16)| -> std::io::Result<std::vec::IntoIter<SocketAddr>> {
+                    Ok(vec![SocketAddr::from(([127, 0, 0, 1], 80))].into_iter())
+                },
+                fn(&(&str, u16)) -> std::io::Result<std::vec::IntoIter<SocketAddr>>
+            ));
+    }
+
+    injector
+        .when_called_async(injectorpp::async_func!(
+            TcpStream::connect(String::new()),
+            std::io::Result<TcpStream>
+        ))
+        .will_return_async(injectorpp::async_return! {
+            make_tcp_with_payload(),
+            std::io::Result<TcpStream>
+        });
+
+    // Create a hyper client
+    let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(HttpConnector::new());
+
+    // Create a GET request to httpbin.org (a reliable testing service)
+    let request = Request::builder()
+        .method("GET")
+        .uri("http://nonexistwebsite")
+        .header("User-Agent", "hyper-test/1.0")
+        .body(String::new())
+        .expect("Failed to build request");
+
+    // Send the request and get the response
+    let response = client
+        .request(request)
+        .await
+        .expect("Failed to send request");
+
+    // Check that we got a successful response
+    assert!(
+        response.status().is_success(),
+        "Expected successful response"
+    );
+    assert_eq!(response.status().as_u16(), 200, "Expected status code 200");
+
+    // Read the response body
+    let body_bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("Failed to read response body")
+        .to_bytes();
+
+    let body_str =
+        String::from_utf8(body_bytes.to_vec()).expect("Failed to convert response body to string");
+
+    // httpbin.org/get returns JSON with request information
+    // Verify that the response contains expected fields
+    assert!(
+        body_str.contains("\"url\""),
+        "Response should contain URL field"
+    );
+    assert!(
+        body_str.contains("httpbin.org/get"),
+        "Response should contain the requested URL"
+    );
+    assert!(
+        body_str.contains("\"headers\""),
+        "Response should contain headers field"
+    );
+    assert!(
+        body_str.contains("hyper-test/1.0"),
+        "Response should contain our User-Agent"
+    );
+
+    println!("Response body: {}", body_str);
 }
