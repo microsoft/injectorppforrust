@@ -2,15 +2,19 @@ use injectorpp::interface::injector::*;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::{Shutdown, TcpListener};
 use std::thread;
+use std::time::Duration;
 use std::{io::Write, net::TcpStream as StdTcpStream};
 use tokio::io::AsyncReadExt;
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
 
 use http_body_util::BodyExt;
 use hyper::{body::Incoming as IncomingBody, Request, Response};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioIo;
+
+use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 
 fn make_unconnected_stream() -> std::io::Result<TcpStream> {
     // 1) create a raw socket
@@ -42,6 +46,24 @@ fn make_tcp_with_payload() -> std::io::Result<TcpStream> {
     let std_stream = StdTcpStream::connect(addr)?;
     // 4) convert into Tokio TcpStream
     TcpStream::from_std(std_stream)
+}
+
+fn make_std_tcp_with_payload(_: &SocketAddr, _: Duration) -> std::io::Result<std::net::TcpStream> {
+    // 1) bind on 127.0.0.1:0 (OS assigns port)
+    let listener = TcpListener::bind(("127.0.0.1", 0))?;
+    let addr = listener.local_addr()?;
+
+    // 2) background "server" writes immediately
+    thread::spawn(move || {
+        if let Ok((mut sock, _)) = listener.accept() {
+            let _ = sock.write_all(b"MOCKED PAYLOAD");
+            let _ = sock.shutdown(Shutdown::Write);
+        }
+    });
+
+    // 3) connect the client (blocking) and return std::net::TcpStream directly
+    let std_stream = StdTcpStream::connect(addr)?;
+    Ok(std_stream)
 }
 
 #[tokio::test]
@@ -95,8 +117,6 @@ async fn test_tokio_tcp_connect_with_payload_should_success() {
 
 #[tokio::test]
 async fn test_hyper_real_http_request() {
-    use std::net::SocketAddr;
-    use std::net::ToSocketAddrs;
     let mut injector = InjectorPP::new();
 
     type ToSocketAddrsFn =
@@ -108,7 +128,7 @@ async fn test_hyper_real_http_request() {
             .when_called_unchecked(injectorpp::func_unchecked!(fn_ptr))
             .will_execute_raw_unchecked(injectorpp::closure_unchecked!(
                 |_addr: &(&str, u16)| -> std::io::Result<std::vec::IntoIter<SocketAddr>> {
-                    Ok(vec![SocketAddr::from(([127, 0, 0, 1], 80))].into_iter())
+                    Ok(vec![SocketAddr::from(([127, 0, 0, 1], 1))].into_iter())
                 },
                 fn(&(&str, u16)) -> std::io::Result<std::vec::IntoIter<SocketAddr>>
             ));
@@ -123,6 +143,29 @@ async fn test_hyper_real_http_request() {
             make_tcp_with_payload(),
             std::io::Result<TcpStream>
         });
+
+    let temp_socket = TcpSocket::new_v4().expect("Failed to create temp socket");
+    let temp_addr = "127.0.0.1:80".parse().unwrap();
+    
+    // Mock TcpSocket::connect method
+    injector
+        .when_called_async(injectorpp::async_func!(
+            temp_socket.connect(temp_addr), 
+            std::io::Result<TcpStream>
+        ))
+        .will_return_async(injectorpp::async_return! {
+            make_tcp_with_payload(),
+            std::io::Result<TcpStream>
+        });
+
+    // Fake std::net::TcpStream::connect_timeout
+    injector
+        .when_called(injectorpp::func!(fn (std::net::TcpStream::connect_timeout)(&SocketAddr, Duration) -> std::io::Result<std::net::TcpStream>))
+        .will_execute_raw(injectorpp::func!(fn (make_std_tcp_with_payload)(&SocketAddr, Duration) -> std::io::Result<std::net::TcpStream>));
+        /*.will_execute(injectorpp::fake!(
+            func_type: fn(_addr: &SocketAddr, _timeout: Duration) -> std::io::Result<std::net::TcpStream>,
+            returns: make_std_tcp_with_payload()
+        ));*/
 
     // Create a hyper client
     let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(HttpConnector::new());
