@@ -54,7 +54,10 @@ fn make_tcp_with_http_response() -> std::io::Result<TcpStream> {
     // 3) connect the client (blocking)
     let std_stream = StdTcpStream::connect(addr)?;
 
-    // 4) convert into Tokio TcpStream
+    // 4) IMPORTANT: Set the socket to non-blocking before converting to Tokio
+    std_stream.set_nonblocking(true)?;
+
+    // 5) convert into Tokio TcpStream
     TcpStream::from_std(std_stream)
 }
 
@@ -71,7 +74,7 @@ async fn test_hyper_real_http_request() {
             .when_called_unchecked(injectorpp::func_unchecked!(fn_ptr))
             .will_execute_raw_unchecked(injectorpp::closure_unchecked!(
                 |_addr: &(&str, u16)| -> std::io::Result<std::vec::IntoIter<SocketAddr>> {
-                    Ok(vec![SocketAddr::from(([127, 0, 0, 1], 1))].into_iter())
+                    Ok(vec![SocketAddr::from(([127, 0, 0, 1], 0))].into_iter())
                 },
                 fn(&(&str, u16)) -> std::io::Result<std::vec::IntoIter<SocketAddr>>
             ));

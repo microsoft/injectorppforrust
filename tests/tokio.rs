@@ -35,7 +35,10 @@ fn make_tcp_with_payload() -> std::io::Result<TcpStream> {
     // 3) connect the client (blocking)
     let std_stream = StdTcpStream::connect(addr)?;
 
-    // 4) convert into Tokio TcpStream
+    // 4) IMPORTANT: Set the socket to non-blocking before converting to Tokio
+    std_stream.set_nonblocking(true)?;
+
+    // 5) convert into Tokio TcpStream
     TcpStream::from_std(std_stream)
 }
 
