@@ -1,6 +1,6 @@
+use hyper::Uri;
 use injectorpp::interface::injector::*;
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader};
 use std::net::{SocketAddr, TcpListener, ToSocketAddrs};
 use std::thread;
 use std::{io::Write, net::TcpStream as StdTcpStream};
@@ -60,7 +60,7 @@ fn make_tcp_with_json_response() -> std::io::Result<TcpStream> {
 }
 
 #[tokio::test]
-async fn test_reqwest_get_request_with_json_response() {
+async fn test_reqwest_get_https_request_with_json_response() {
     let mut injector = InjectorPP::new();
 
     type ToSocketAddrsFn =
@@ -92,6 +92,14 @@ async fn test_reqwest_get_request_with_json_response() {
             std::io::Result<TcpStream>
         });
 
+    // Force using http to bypass tls validation
+    injector
+        .when_called(injectorpp::func!(fn (Uri::scheme_str)(&Uri) -> Option<&str>))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_uri: &Uri) -> Option<&str>,
+            returns: Some("http")
+        ));
+
     // Simulated reqwest client creation and request
     let client = reqwest::Client::new();
 
@@ -116,5 +124,21 @@ async fn test_reqwest_get_request_with_json_response() {
         response.headers().get("content-type").unwrap(),
         "application/json",
         "Expected JSON content type"
+    );
+
+    // Verify response body
+    let body = response.text().await.expect("Failed to read response body");
+
+    assert!(
+        body.contains("Hello from injectorpp!"),
+        "Expected message in response body"
+    );
+    assert!(
+        body.contains("test_user"),
+        "Expected username in response body"
+    );
+    assert!(
+        body.contains("test@example.com"),
+        "Expected email in response body"
     );
 }
