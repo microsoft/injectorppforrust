@@ -94,7 +94,6 @@ async fn test_hyper_real_http_request() {
     // Create a hyper client
     let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(HttpConnector::new());
 
-    // Create a GET request to httpbin.org (a reliable testing service)
     let request = Request::builder()
         .method("GET")
         .uri("http://nonexistwebsite")
@@ -126,24 +125,23 @@ async fn test_hyper_real_http_request() {
     let body_str =
         String::from_utf8(body_bytes.to_vec()).expect("Failed to convert response body to string");
 
-    // httpbin.org/get returns JSON with request information
-    // Verify that the response contains expected fields
     assert!(
         body_str.contains("\"url\""),
         "Response should contain URL field"
     );
+
     assert!(
         body_str.contains("nonexistwebsite"),
         "Response should contain the requested URL"
     );
+
     assert!(
         body_str.contains("\"headers\""),
         "Response should contain headers field"
     );
+
     assert!(
         body_str.contains("hyper-test/1.0"),
         "Response should contain our User-Agent"
     );
-
-    println!("Response body: {}", body_str);
 }
