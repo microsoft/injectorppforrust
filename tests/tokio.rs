@@ -48,6 +48,30 @@ fn make_tcp_with_payload() -> std::io::Result<TcpStream> {
     TcpStream::from_std(std_stream)
 }
 
+fn make_tcp_with_http_response() -> std::io::Result<TcpStream> {
+    // 1) bind on 127.0.0.1:0 (OS assigns port)
+    let listener = TcpListener::bind(("127.0.0.1", 0))?;
+    let addr = listener.local_addr()?;
+
+    // 2) background "server" writes a proper HTTP response
+    thread::spawn(move || {
+        if let Ok((mut sock, _)) = listener.accept() {
+            let http_response = b"HTTP/1.1 200 OK\r\n\
+                Content-Type: application/json\r\n\
+                Content-Length: 87\r\n\
+                \r\n\
+                {\"url\": \"http://httpbin.org/get\", \"headers\": {\"User-Agent\": \"hyper-test/1.0\"}}";
+            let _ = sock.write_all(http_response);
+            let _ = sock.shutdown(Shutdown::Write);
+        }
+    });
+
+    // 3) connect the client (blocking)
+    let std_stream = StdTcpStream::connect(addr)?;
+    // 4) convert into Tokio TcpStream
+    TcpStream::from_std(std_stream)
+}
+
 fn make_std_tcp_with_payload(_: &SocketAddr, _: Duration) -> std::io::Result<std::net::TcpStream> {
     // 1) bind on 127.0.0.1:0 (OS assigns port)
     let listener = TcpListener::bind(("127.0.0.1", 0))?;
@@ -134,38 +158,19 @@ async fn test_hyper_real_http_request() {
             ));
     }
 
-    injector
-        .when_called_async(injectorpp::async_func!(
-            TcpStream::connect(String::new()),
-            std::io::Result<TcpStream>
-        ))
-        .will_return_async(injectorpp::async_return! {
-            make_tcp_with_payload(),
-            std::io::Result<TcpStream>
-        });
-
     let temp_socket = TcpSocket::new_v4().expect("Failed to create temp socket");
     let temp_addr = "127.0.0.1:80".parse().unwrap();
-    
+
     // Mock TcpSocket::connect method
     injector
         .when_called_async(injectorpp::async_func!(
-            temp_socket.connect(temp_addr), 
+            temp_socket.connect(temp_addr),
             std::io::Result<TcpStream>
         ))
         .will_return_async(injectorpp::async_return! {
-            make_tcp_with_payload(),
+            make_tcp_with_http_response(),
             std::io::Result<TcpStream>
         });
-
-    // Fake std::net::TcpStream::connect_timeout
-    injector
-        .when_called(injectorpp::func!(fn (std::net::TcpStream::connect_timeout)(&SocketAddr, Duration) -> std::io::Result<std::net::TcpStream>))
-        .will_execute_raw(injectorpp::func!(fn (make_std_tcp_with_payload)(&SocketAddr, Duration) -> std::io::Result<std::net::TcpStream>));
-        /*.will_execute(injectorpp::fake!(
-            func_type: fn(_addr: &SocketAddr, _timeout: Duration) -> std::io::Result<std::net::TcpStream>,
-            returns: make_std_tcp_with_payload()
-        ));*/
 
     // Create a hyper client
     let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(HttpConnector::new());
