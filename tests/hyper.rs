@@ -63,7 +63,7 @@ fn make_tcp_with_http_response() -> std::io::Result<TcpStream> {
 }
 
 #[tokio::test]
-async fn test_hyper_real_http_request() {
+async fn test_hyper_http_request() {
     let mut injector = InjectorPP::new();
 
     type ToSocketAddrsFn =
@@ -151,7 +151,7 @@ async fn test_hyper_real_http_request() {
 }
 
 #[tokio::test]
-async fn test_hyper_real_https_request() {
+async fn test_hyper_https_request() {
     let mut injector = InjectorPP::new();
 
     type ToSocketAddrsFn =
