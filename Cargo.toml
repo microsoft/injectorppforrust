@@ -21,3 +21,4 @@ hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1", 
 http-body-util = "0.1"
 hyper-tls = "0.6"
 socket2 = "0.5.10"
+reqwest = "0.12.22"
