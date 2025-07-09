@@ -30,6 +30,8 @@ jobs:
             target: aarch64-pc-windows-msvc
           - os: macos-latest
             target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
 
     runs-on: ${{ matrix.os }}
     name: Build & test on ${{ matrix.os }} / ${{ matrix.target }}
