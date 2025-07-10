@@ -1,3 +1,4 @@
+#![cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
 use hyper::Uri;
 use injectorpp::interface::injector::*;
 use std::io::{BufRead, BufReader};
