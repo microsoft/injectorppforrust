@@ -13,6 +13,9 @@ description = "Injectorpp is a powerful tool designed to facilitate the writing 
 [dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+mach2 = "0.4"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"], default-features = false }
 azure_core = "0.25.0"
