@@ -94,7 +94,7 @@ fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8
 /// For AArch64, memory must be within ±128MB due to instruction encoding limits (e.g., B/BL).
 /// For x86_64, this restriction doesn't apply — use `null_mut()` as base hint.
 #[cfg(target_os = "windows")]
-fn allocate_jit_memory_windows(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
+fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(target_arch = "aarch64")]
     {
         let max_range: u64 = 0x8000000; // ±128MB
