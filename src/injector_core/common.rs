@@ -51,6 +51,7 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
     }
 }
 
+// See https://github.com/microsoft/injectorppforrust/issues/84
 /// Allocate JIT memory on Linux platforms.
 ///
 /// On AArch64, memory must be within ±128MB of the original function due to branch instruction limitations (B/BL).
