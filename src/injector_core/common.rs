@@ -88,47 +88,65 @@ fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8
         }
     }
 }
-
+// See https://github.com/microsoft/injectorppforrust/issues/84
+/// Allocate executable JIT memory on Windows platforms.
+///
+/// For AArch64, memory must be within ±128MB due to instruction encoding limits (e.g., B/BL).
+/// For x86_64, this restriction doesn't apply — use `null_mut()` as base hint.
 #[cfg(target_os = "windows")]
 fn allocate_jit_memory_windows(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    let max_range: u64 = 0x8000000; // 128MB
-    let original_addr = src.as_ptr() as u64;
-    let page_size = unsafe { get_page_size() as u64 };
-    let mut start_address = original_addr.saturating_sub(max_range);
+    #[cfg(target_arch = "aarch64")]
+    {
+        let max_range: u64 = 0x8000000; // ±128MB
+        let original_addr = src.as_ptr() as u64;
+        let page_size = unsafe { get_page_size() as u64 };
+        let mut start_address = original_addr.saturating_sub(max_range);
 
-    loop {
+        while start_address <= original_addr + max_range {
+            let ptr = unsafe {
+                VirtualAlloc(
+                    start_address as *mut c_void,
+                    code_size,
+                    MEM_COMMIT | MEM_RESERVE,
+                    PAGE_EXECUTE_READWRITE,
+                )
+            };
+            if !ptr.is_null() {
+                let allocated = ptr as u64;
+                let diff = allocated.abs_diff(original_addr);
+                if diff <= max_range {
+                    return ptr as *mut u8;
+                } else {
+                    unsafe {
+                        VirtualFree(ptr, 0, MEM_RELEASE);
+                    }
+                }
+            }
+            start_address += page_size;
+        }
+
+        panic!("Failed to allocate executable memory within ±128MB of original function address on AArch64 Windows");
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
         let ptr = unsafe {
             VirtualAlloc(
-                start_address as *mut c_void,
+                std::ptr::null_mut(), // let OS choose suitable address
                 code_size,
                 MEM_COMMIT | MEM_RESERVE,
                 PAGE_EXECUTE_READWRITE,
             )
         };
-        if !ptr.is_null() {
-            let allocated = ptr as u64;
-            let diff = if allocated > original_addr {
-                allocated - original_addr
-            } else {
-                original_addr - allocated
-            };
-            if diff <= max_range {
-                return ptr as *mut u8;
-            } else {
-                // Free the memory because it's outside our desired range
-                unsafe {
-                    VirtualFree(ptr, 0, MEM_RELEASE);
-                }
-            }
+
+        if ptr.is_null() {
+            panic!("Failed to allocate executable memory on non-AArch64 Windows");
         }
-        start_address += page_size;
-        if start_address > original_addr + max_range {
-            panic!(
-                "Failed to allocate executable memory within ±128MB of original function address"
-            );
-        }
+
+        ptr as *mut u8
     }
 }
+
 
 /// Unsafely reads `len` bytes from `ptr` and returns them as a Vec.
 ///
