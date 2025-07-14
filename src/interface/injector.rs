@@ -289,6 +289,11 @@ impl Default for InjectorPP {
     }
 }
 
+/// A guard that prevents injectorpp affecting the test while alive.
+///
+/// When this guard is held, no any injectorpp instance can be created.
+/// This is useful for threads that need to call functions with their
+/// original behavior.
 pub struct Preventer {
     _lock: MutexGuard<'static, ()>,
 }
