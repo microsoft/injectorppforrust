@@ -19,16 +19,18 @@ impl PatchTrait for PatchArm64 {
         generate_will_execute_jit_code_abs(jit_memory, target.as_ptr());
         let func_addr = src.as_ptr() as usize;
         let jit_addr = jit_memory as usize;
-        let offset = (jit_addr as isize - func_addr as isize) / 4;
-        if !(-33554432..=33554431).contains(&offset) {
-            panic!("JIT memory is out of branch range");
-        }
-        let branch_instr: u32 = 0x14000000 | ((offset as u32) & 0x03ffffff);
+        let instrs = maybe_emit_long_jump(func_addr, jit_addr);
         let nop: u32 = 0xd503201f;
         let mut patch = [0u8; 12];
-        patch[0..4].copy_from_slice(&branch_instr.to_le_bytes());
-        patch[4..8].copy_from_slice(&nop.to_le_bytes());
-        patch[8..12].copy_from_slice(&nop.to_le_bytes());
+        if instrs.len() == 1 {
+            patch[0..4].copy_from_slice(&instrs[0].to_le_bytes());
+            patch[4..8].copy_from_slice(&nop.to_le_bytes());
+            patch[8..12].copy_from_slice(&nop.to_le_bytes());
+        } else {
+            patch[0..4].copy_from_slice(&instrs[0].to_le_bytes());
+            patch[4..8].copy_from_slice(&instrs[1].to_le_bytes());
+            patch[8..12].copy_from_slice(&instrs[2].to_le_bytes());
+        }
         unsafe {
             patch_function(src.as_ptr() as *mut u8, &patch);
         }
