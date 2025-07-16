@@ -8,6 +8,9 @@ use crate::injector_core::winapi::*;
 #[cfg(target_os = "linux")]
 use crate::injector_core::linuxapi::*;
 
+#[cfg(target_os = "macos")]
+use crate::injector_core::macosapi::*;
+
 /// A safe wrapper around a raw function pointer.
 ///
 /// `FuncPtrInternal` encapsulates a non-null function pointer and provides safe
@@ -40,9 +43,9 @@ impl FuncPtrInternal {
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
 pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        allocate_jit_memory_linux(src, code_size)
+        allocate_jit_memory_unix(src, code_size)
     }
 
     #[cfg(target_os = "windows")]
@@ -51,20 +54,27 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
     }
 }
 
-#[cfg(target_os = "linux")]
-fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    let max_range: u64 = 0x8000000; // 128MB
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn allocate_jit_memory_unix(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
+    let max_range: u64 = 0x8000_0000; // 2 GB.
     let original_addr = src.as_ptr() as u64;
     let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
     // Start at original_addr - max_range.
     let mut start_address = original_addr.saturating_sub(max_range);
+
+    #[cfg(target_os = "macos")]
+    let flags = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_JIT;
+
+    #[cfg(target_os = "linux")]
+    let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
+
     loop {
         let ptr = unsafe {
             libc::mmap(
                 start_address as *mut c_void,
                 code_size,
                 PROT_READ | PROT_WRITE | PROT_EXEC,
-                libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+                flags,
                 -1,
                 0,
             )
@@ -176,7 +186,7 @@ impl Drop for PatchGuard {
         unsafe {
             patch_function(self.func_ptr, &self.original_bytes[..self.patch_size]);
             if !self.jit_memory.is_null() {
-                #[cfg(target_os = "linux")]
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
                 {
                     libc::munmap(self.jit_memory as *mut c_void, self.jit_size);
                 }
@@ -198,12 +208,82 @@ impl Drop for PatchGuard {
 /// # Safety
 ///
 /// The caller must ensure that `func` points to a valid, patchable code region.
+#[cfg(not(target_os = "macos"))]
 pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
     make_memory_writable_and_executable(func);
 
     inject_asm_code(patch, func);
 }
 
+#[cfg(target_os = "macos")]
+pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
+    use mach2::traps::mach_task_self;
+    use mach2::vm::{mach_vm_protect, mach_vm_remap};
+    use mach2::vm_inherit::VM_INHERIT_NONE;
+    use mach2::vm_prot::VM_PROT_COPY;
+    use mach2::vm_statistics::{VM_FLAGS_ANYWHERE, VM_FLAGS_OVERWRITE};
+
+    // TODO: Why is this not defined in mach2?
+    const VM_FLAGS_RETURN_DATA_ADDR: i32 = 0x100000;
+
+    let mut addr = func as mach_vm_address_t;
+    let mut remap: mach_vm_address_t = std::mem::zeroed();
+    let mut cur: vm_prot_t = std::mem::zeroed();
+    let mut max: vm_prot_t = std::mem::zeroed();
+    mach_vm_remap(
+        mach_task_self(),
+        &mut remap,
+        patch.len() as u64,
+        0,
+        VM_FLAGS_ANYWHERE | VM_FLAGS_RETURN_DATA_ADDR,
+        mach_task_self(),
+        addr,
+        0,
+        &mut cur,
+        &mut max,
+        VM_INHERIT_NONE,
+    );
+
+    mach_vm_protect(
+        mach_task_self(),
+        remap,
+        0x8,
+        0,
+        VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY,
+    );
+
+    inject_asm_code(patch, remap as *mut u8);
+
+    sys_dcache_flush(func, patch.len());
+
+    mach_vm_protect(
+        mach_task_self(),
+        remap,
+        0x8,
+        0,
+        VM_PROT_READ | VM_PROT_EXECUTE,
+    );
+
+    sys_icache_invalidate(func, patch.len());
+
+    mach_vm_remap(
+        mach_task_self(),
+        &mut addr,
+        patch.len() as u64,
+        0,
+        VM_FLAGS_OVERWRITE | VM_FLAGS_RETURN_DATA_ADDR,
+        mach_task_self(),
+        remap,
+        0,
+        &mut cur,
+        &mut max,
+        VM_INHERIT_NONE,
+    );
+}
+
+// MacOS forces memory to be writable or executable but not both. So we don't need an
+// implementation for it.
+#[cfg(not(target_os = "macos"))]
 unsafe fn make_memory_writable_and_executable(func: *mut u8) {
     #[cfg(target_os = "linux")]
     {
@@ -252,7 +332,14 @@ unsafe fn make_memory_writable_and_executable_windows(func: *const u8) {
 }
 
 pub(crate) unsafe fn inject_asm_code(asm_code: &[u8], dest: *mut u8) {
+    #[cfg(target_os = "macos")]
+    pthread_jit_write_protect_np(0);
+
     ptr::copy_nonoverlapping(asm_code.as_ptr(), dest, asm_code.len());
+
+    #[cfg(target_os = "macos")]
+    pthread_jit_write_protect_np(1);
+
     clear_cache(dest, dest.add(asm_code.len()));
 }
 
@@ -271,6 +358,13 @@ unsafe fn clear_cache(start: *mut u8, end: *mut u8) {
         if success == 0 {
             panic!("FlushInstructionCache failed");
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // The cache is invalidated in patch_function.
+        let _ = start;
+        let _ = end;
     }
 
     // On ARM64, explicitly synchronize the CPU pipeline.
