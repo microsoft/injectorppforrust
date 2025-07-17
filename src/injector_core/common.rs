@@ -51,17 +51,54 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
     }
 }
 
+// See https://github.com/microsoft/injectorppforrust/issues/84
+/// Allocate JIT memory on Linux platforms.
+///
+/// On AArch64, memory must be within ±128MB of the original function due to branch instruction limitations (B/BL).
+/// On x86_64, no such restriction applies.
+///
+/// # Panics
+/// Panics if memory allocation fails or, for AArch64, if no memory is found within the valid range.
 #[cfg(target_os = "linux")]
-fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    let max_range: u64 = 0x8000000; // 128MB
-    let original_addr = src.as_ptr() as u64;
-    let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
-    // Start at original_addr - max_range.
-    let mut start_address = original_addr.saturating_sub(max_range);
-    loop {
+fn allocate_jit_memory_linux(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let original_addr = _src.as_ptr() as u64;
+        let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
+        let max_range: u64 = 0x8000000; // ±128MB
+        let mut start_address = original_addr.saturating_sub(max_range);
+
+        while start_address <= original_addr + max_range {
+            let ptr = unsafe {
+                libc::mmap(
+                    start_address as *mut c_void,
+                    code_size,
+                    PROT_READ | PROT_WRITE | PROT_EXEC,
+                    libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+                    -1,
+                    0,
+                )
+            };
+            if ptr != libc::MAP_FAILED {
+                let allocated = ptr as u64;
+                let diff = allocated.abs_diff(original_addr);
+                if diff <= max_range {
+                    return ptr as *mut u8;
+                } else {
+                    unsafe { libc::munmap(ptr, code_size) };
+                }
+            }
+            start_address += page_size;
+        }
+
+        panic!("Failed to allocate JIT memory within ±128MB of source on AArch64");
+    }
+
+    #[cfg(not(target_arch = "aarch64"))]
+    {
         let ptr = unsafe {
             libc::mmap(
-                start_address as *mut c_void,
+                std::ptr::null_mut(),
                 code_size,
                 PROT_READ | PROT_WRITE | PROT_EXEC,
                 libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
@@ -69,23 +106,12 @@ fn allocate_jit_memory_linux(src: &FuncPtrInternal, code_size: usize) -> *mut u8
                 0,
             )
         };
-        if ptr != libc::MAP_FAILED {
-            let allocated = ptr as u64;
-            let diff = if allocated > original_addr {
-                allocated - original_addr
-            } else {
-                original_addr - allocated
-            };
-            if diff <= max_range {
-                return ptr as *mut u8;
-            } else {
-                unsafe { libc::munmap(ptr, code_size) };
-            }
+
+        if ptr == libc::MAP_FAILED {
+            panic!("Failed to allocate JIT memory on non-AArch64 Linux");
         }
-        start_address += page_size;
-        if start_address > original_addr + max_range {
-            panic!("Failed to allocate jit memory within +/-128MB from original function address");
-        }
+
+        ptr as *mut u8
     }
 }
 
