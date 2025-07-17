@@ -98,7 +98,7 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
     #[cfg(target_arch = "aarch64")]
     {
         let max_range: u64 = 0x8000000; // ±128MB
-        let original_addr = src.as_ptr() as u64;
+        let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { get_page_size() as u64 };
         let mut start_address = original_addr.saturating_sub(max_range);
 
