@@ -82,6 +82,13 @@ impl InjectorPP {
         }
     }
 
+    /// Prevents injectorpp from other threads to change the functions.
+    /// This is useful when the test does not want to be affected by injectorpp usage in other threads.
+    pub fn prevent() -> Preventer {
+        let lock = LOCK_FUNCTION.lock();
+        Preventer { _lock: lock }
+    }
+
     /// Begins faking a function.
     ///
     /// Accepts a FuncPtr to the function you want to fake. Use the `func!` macro to obtain this pointer.
@@ -279,6 +286,25 @@ impl InjectorPP {
 impl Default for InjectorPP {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// A guard that prevents injectorpp affecting the test while alive.
+///
+/// When this guard is held, no any injectorpp instance can be created.
+/// This is useful for threads that need to call functions with their
+/// original behavior.
+pub struct Preventer {
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl Preventer {
+    /// Check if patching is currently prevented by this guard.
+    ///
+    /// This always returns `true` while the guard exists, as the guard
+    /// holds the global mutex that prevents patching.
+    pub fn is_active(&self) -> bool {
+        true
     }
 }
 
