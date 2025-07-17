@@ -63,7 +63,7 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
 fn allocate_jit_memory_linux(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(target_arch = "aarch64")]
     {
-        let original_addr = src.as_ptr() as u64;
+        let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
         let max_range: u64 = 0x8000000; // ±128MB
         let mut start_address = original_addr.saturating_sub(max_range);
