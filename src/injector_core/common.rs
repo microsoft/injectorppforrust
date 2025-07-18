@@ -118,7 +118,7 @@ fn allocate_jit_memory_linux(_src: &FuncPtrInternal, code_size: usize) -> *mut u
 /// Allocate executable JIT memory on Windows platforms.
 ///
 /// For AArch64, memory must be within ±128MB due to instruction encoding limits (e.g., B/BL).
-/// For x86_64, this restriction doesn't apply — use `null_mut()` as base hint.
+/// For x86_64, memory must be within ±2GB for `jmp rel32` instructions.
 #[cfg(target_os = "windows")]
 fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(target_arch = "aarch64")]
@@ -154,7 +154,41 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
         panic!("Failed to allocate executable memory within ±128MB of original function address on AArch64 Windows");
     }
 
-    #[cfg(not(target_arch = "aarch64"))]
+     #[cfg(target_arch = "x86_64")]
+    {
+        let max_range: usize = 0x8000_0000; // ±2GB
+        let original_addr = _src.as_ptr() as usize;
+        let page_size = unsafe { get_page_size() };
+        let mut addr = original_addr.saturating_sub(max_range);
+
+        while addr <= original_addr + max_range {
+            let ptr = unsafe {
+                VirtualAlloc(
+                    addr as *mut c_void,
+                    code_size,
+                    MEM_COMMIT | MEM_RESERVE,
+                    PAGE_EXECUTE_READWRITE,
+                )
+            };
+
+            if !ptr.is_null() {
+                let allocated = ptr as usize;
+                if allocated.abs_diff(original_addr) <= max_range {
+                    return ptr as *mut u8;
+                } else {
+                    unsafe {
+                        VirtualFree(ptr, 0, MEM_RELEASE);
+                    }
+                }
+            }
+
+            addr += page_size;
+        }
+
+        panic!("Failed to allocate executable memory within ±2GB of original function address on x86_64 Windows");
+    }
+
+    #[cfg(all(not(target_arch = "x86_64"), not(target_arch = "aarch64")))]
     {
         let ptr = unsafe {
             VirtualAlloc(
@@ -166,7 +200,7 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
         };
 
         if ptr.is_null() {
-            panic!("Failed to allocate executable memory on non-AArch64 Windows");
+            panic!("Failed to allocate executable memory on Windows (unsupported architecture)");
         }
 
         ptr as *mut u8
