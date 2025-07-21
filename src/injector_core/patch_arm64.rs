@@ -23,6 +23,7 @@ impl PatchTrait for PatchArm64 {
 }
 
 
+    
     fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard {
     const PATCH_SIZE: usize = 12;
     const JIT_SIZE: usize = 8;
