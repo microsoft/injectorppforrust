@@ -12,65 +12,25 @@ impl PatchTrait for PatchArm64 {
         src: FuncPtrInternal,
         target: FuncPtrInternal,
     ) -> PatchGuard {
-        let patch_size = 12;
-        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, patch_size) };
-        let jit_size = 20;
-        let jit_memory = allocate_jit_memory(&src, jit_size);
-        generate_will_execute_jit_code_abs(jit_memory, target.as_ptr());
-        let func_addr = src.as_ptr() as usize;
-        let jit_addr = jit_memory as usize;
-        let offset = (jit_addr as isize - func_addr as isize) / 4;
-        if !(-33554432..=33554431).contains(&offset) {
-            panic!("JIT memory is out of branch range");
-        }
-        let branch_instr: u32 = 0x14000000 | ((offset as u32) & 0x03ffffff);
-        let nop: u32 = 0xd503201f;
-        let mut patch = [0u8; 12];
-        patch[0..4].copy_from_slice(&branch_instr.to_le_bytes());
-        patch[4..8].copy_from_slice(&nop.to_le_bytes());
-        patch[8..12].copy_from_slice(&nop.to_le_bytes());
-        unsafe {
-            patch_function(src.as_ptr() as *mut u8, &patch);
-        }
+        const PATCH_SIZE: usize = 12;
+        const JIT_SIZE: usize = 20;
 
-        PatchGuard::new(
-            src.as_ptr() as *mut u8,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        )
+        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
+        let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
+        generate_will_execute_jit_code_abs(jit_memory, target.as_ptr());
+
+        apply_branch_patch(src, jit_memory, JIT_SIZE, &original_bytes)
     }
 
     fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard {
-        let patch_size = 12;
-        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, patch_size) };
-        let jit_size = 8;
-        let jit_memory = allocate_jit_memory(&src, jit_size);
-        generate_will_return_boolean_jit_code(jit_memory, value);
-        let func_addr = src.as_ptr() as usize;
-        let jit_addr = jit_memory as usize;
-        let offset = (jit_addr as isize - func_addr as isize) / 4;
-        if !(-33554432..=33554431).contains(&offset) {
-            panic!("JIT memory is out of branch range");
-        }
-        let branch_instr: u32 = 0x14000000 | ((offset as u32) & 0x03ffffff);
-        let nop: u32 = 0xd503201f;
-        let mut patch = [0u8; 12];
-        patch[0..4].copy_from_slice(&branch_instr.to_le_bytes());
-        patch[4..8].copy_from_slice(&nop.to_le_bytes());
-        patch[8..12].copy_from_slice(&nop.to_le_bytes());
-        unsafe {
-            patch_function(src.as_ptr() as *mut u8, &patch);
-        }
+        const PATCH_SIZE: usize = 12;
+        const JIT_SIZE: usize = 8;
 
-        PatchGuard::new(
-            src.as_ptr() as *mut u8,
-            original_bytes,
-            patch_size,
-            jit_memory,
-            jit_size,
-        )
+        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
+        let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
+        generate_will_return_boolean_jit_code(jit_memory, value);
+
+        apply_branch_patch(src, jit_memory, JIT_SIZE, &original_bytes)
     }
 }
 
@@ -150,4 +110,42 @@ fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
     asm_code.push(((instruction >> 8) & 0xFF) as u8);
     asm_code.push(((instruction >> 16) & 0xFF) as u8);
     asm_code.push(((instruction >> 24) & 0xFF) as u8);
+}
+
+fn apply_branch_patch(
+    src: FuncPtrInternal,
+    jit_memory: *mut u8,
+    jit_size: usize,
+    original_bytes: &[u8],
+) -> PatchGuard {
+    const PATCH_SIZE: usize = 12;
+    const BRANCH_RANGE: std::ops::RangeInclusive<isize> = -0x2000000..=0x1FFF_FFFF; // ±32MB
+    const NOP: u32 = 0xd503201f;
+
+    let func_addr = src.as_ptr() as usize;
+    let jit_addr = jit_memory as usize;
+    let offset = (jit_addr as isize - func_addr as isize) / 4;
+
+    if !BRANCH_RANGE.contains(&offset) {
+        panic!("JIT memory is out of branch range: offset = {offset}, expected ±32MB");
+    }
+
+    let branch_instr: u32 = 0x14000000 | ((offset as u32) & 0x03FF_FFFF);
+
+    let mut patch = [0u8; PATCH_SIZE];
+    patch[0..4].copy_from_slice(&branch_instr.to_le_bytes());
+    patch[4..8].copy_from_slice(&NOP.to_le_bytes());
+    patch[8..12].copy_from_slice(&NOP.to_le_bytes());
+
+    unsafe {
+        patch_function(src.as_ptr() as *mut u8, &patch);
+    }
+
+    PatchGuard::new(
+        src.as_ptr() as *mut u8,
+        original_bytes.to_vec(),
+        PATCH_SIZE,
+        jit_memory,
+        jit_size,
+    )
 }
