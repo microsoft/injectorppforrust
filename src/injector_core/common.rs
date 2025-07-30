@@ -68,6 +68,12 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
+    #[cfg(target_os = "macos")]
+    let flags = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_JIT;
+
+    #[cfg(target_os = "linux")]
+    let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
+
     #[cfg(target_arch = "aarch64")]
     {
         let original_addr = _src.as_ptr() as u64;
@@ -81,7 +87,7 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
                     start_address as *mut c_void,
                     code_size,
                     PROT_READ | PROT_WRITE | PROT_EXEC,
-                    libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+                    flags,
                     -1,
                     0,
                 )
@@ -114,7 +120,7 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
                     start_address as *mut c_void,
                     code_size,
                     PROT_READ | PROT_WRITE | PROT_EXEC,
-                    libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
+                    flags,
                     -1,
                     0,
                 )

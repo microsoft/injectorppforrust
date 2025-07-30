@@ -355,7 +355,7 @@ pub(crate) fn maybe_emit_long_jump(pc: usize, target: usize) -> Vec<u32> {
 
     // Simple B case where we are in bounds.
     let disp = (target as i128).wrapping_sub(pc as i128);
-    if disp >= -(1i128 << 27) && disp < (1i128 << 27) {
+    if (-(1i128 << 27)..(1i128 << 27)).contains(&disp) {
         let imm26 = ((disp >> 2) as u32) & 0x03ff_ffff;
         let b_inst = 0b000101 << 26 | imm26;
         words.push(b_inst);
@@ -368,7 +368,7 @@ pub(crate) fn maybe_emit_long_jump(pc: usize, target: usize) -> Vec<u32> {
 
     // Split up the page difference into a 21 bit signed immediate.
     let imm21 = (page_diff as u64) & 0x1f_ffff;
-    let immlo = ((imm21 >> 0) & 0b11) as u32;
+    let immlo = (imm21 & 0b11) as u32;
     let immhi = ((imm21 >> 2) & 0x7ffff) as u32;
 
     // ADRP instruction.
