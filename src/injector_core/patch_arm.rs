@@ -13,8 +13,12 @@ impl PatchTrait for PatchArm {
         src: FuncPtrInternal,
         target: FuncPtrInternal,
     ) -> PatchGuard {
+        // Thumb mode (T32) functions are aligned on odd addresses,
+        // while ARM mode (A32) functions are aligned on even addresses.
         let is_src_thumb = src.as_ptr() as usize & 1 != 0;
 
+        // Even if the function jump is on an odd address, the previous byte
+        // is executed in Thumb mode, so we need to align the memory on 2 bytes.
         let src_ptr = if is_src_thumb {
             (src.as_ptr() as u32 - 1) as *const ()
         } else {
