@@ -3,6 +3,7 @@ pub(crate) mod common;
 pub(crate) mod internal;
 pub(crate) mod linuxapi;
 pub(crate) mod patch_amd64;
+pub(crate) mod patch_arm;
 pub(crate) mod patch_arm64;
 pub(crate) mod patch_trait;
 pub(crate) mod utils;
