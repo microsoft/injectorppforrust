@@ -347,6 +347,7 @@ pub(crate) fn emit_movz(
 /// ADRP x16, target
 /// ADD x16, x16, #:lo12:
 /// BR x16
+#[cfg(target_os = "macos")]
 pub(crate) fn maybe_emit_long_jump(pc: usize, target: usize) -> Vec<u32> {
     // We are storing the address in x16.
     const REGISTER: u32 = 16;

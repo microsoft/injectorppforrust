@@ -76,9 +76,14 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
+        #[cfg(target_os = "macos")]
+        let max_range: u64 = 0x8000_0000; // ±2GB
+
+        #[cfg(target_os = "linux")]
+        let max_range: u64 = 0x8000000; // ±128MB
+
         let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
-        let max_range: u64 = 0x8000_0000; // ±2GB
         let mut start_address = original_addr.saturating_sub(max_range);
 
         while start_address <= original_addr + max_range {
@@ -104,7 +109,10 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
             start_address += page_size;
         }
 
-        panic!("Failed to allocate JIT memory within ±2GB of source on this architecture");
+        panic!(
+            "Failed to allocate JIT memory within ±2GB of source on {} arch",
+            std::env::consts::ARCH
+        );
     }
 
     #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
@@ -121,7 +129,10 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         };
 
         if ptr == libc::MAP_FAILED {
-            panic!("Failed to allocate executable memory on this architecture");
+            panic!(
+                "Failed to allocate executable memory on {} arch",
+                std::env::consts::ARCH
+            );
         }
 
         ptr as *mut u8
