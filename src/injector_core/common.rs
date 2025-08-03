@@ -59,7 +59,8 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
 // See https://github.com/microsoft/injectorppforrust/issues/88
 /// Allocate JIT memory on Unix platforms.
 ///
-/// Both aarch64 and x86_64 architectures have a ±2GB memory range.
+/// On MacOS, both aarch64 and x86_64 architectures have a ±2GB memory range.
+/// On MacOS, both aarch64 and x86_64 architectures have a ±128MB memory range.
 /// Other architectures have no enforced address range constraint.
 ///
 /// # Panics
@@ -110,7 +111,7 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         }
 
         panic!(
-            "Failed to allocate JIT memory within ±2GB of source on {} arch",
+            "Failed to allocate JIT memory within ±{max_range} of source on {} arch",
             std::env::consts::ARCH
         );
     }
