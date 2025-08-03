@@ -9,29 +9,63 @@ pub(crate) struct PatchArm64;
 
 impl PatchTrait for PatchArm64 {
     fn replace_function_with_other_function(
-        src: FuncPtrInternal,
-        target: FuncPtrInternal,
-    ) -> PatchGuard {
-        const PATCH_SIZE: usize = 12;
-        const JIT_SIZE: usize = 20;
+    src: FuncPtrInternal,
+    target: FuncPtrInternal,
+) -> PatchGuard {
+    const PATCH_SIZE: usize = 12;
+    const JIT_SIZE: usize = 20;
 
-        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
-        let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
-        generate_will_execute_jit_code_abs(jit_memory, target.as_ptr());
-
-        apply_branch_patch(src, jit_memory, JIT_SIZE, &original_bytes)
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        if let Some(size) = get_function_size(src.as_ptr()) {
+            if size < PATCH_SIZE {
+                panic!(
+                    "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
+                    src.as_ptr(),
+                    size,
+                    PATCH_SIZE
+                );
+            }
+        } else {
+            panic!("Unable to determine function size for {:?}", src.as_ptr());
+        }
     }
+
+    let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
+    let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
+    generate_will_execute_jit_code_abs(jit_memory, target.as_ptr());
+
+    apply_branch_patch(src, jit_memory, JIT_SIZE, &original_bytes)
+}
+
 
     fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard {
-        const PATCH_SIZE: usize = 12;
-        const JIT_SIZE: usize = 8;
+    const PATCH_SIZE: usize = 12;
+    const JIT_SIZE: usize = 8;
 
-        let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
-        let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
-        generate_will_return_boolean_jit_code(jit_memory, value);
-
-        apply_branch_patch(src, jit_memory, JIT_SIZE, &original_bytes)
+    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+    {
+        if let Some(size) = get_function_size(src.as_ptr()) {
+            if size < PATCH_SIZE {
+                panic!(
+                    "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
+                    src.as_ptr(),
+                    size,
+                    PATCH_SIZE
+                );
+            }
+        } else {
+            panic!("Unable to determine function size for {:?}", src.as_ptr());
+        }
     }
+
+    let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
+    let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
+    generate_will_return_boolean_jit_code(jit_memory, value);
+
+    apply_branch_patch(src, jit_memory, JIT_SIZE, &original_bytes)
+}
+
 }
 
 /// Generates a 16-byte JIT code block that loads the absolute address of `target`
@@ -111,6 +145,35 @@ fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
     asm_code.push(((instruction >> 16) & 0xFF) as u8);
     asm_code.push(((instruction >> 24) & 0xFF) as u8);
 }
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[inline]
+fn get_function_size(ptr: *const ()) -> Option<usize> {
+    use libc::{Dl_info, c_void, c_int};
+
+    const RTLD_DI_SYMENT: c_int = 2;
+
+    unsafe {
+        let mut info: Dl_info = std::mem::zeroed();
+        if libc::dladdr(ptr as *const c_void, &mut info) == 0 {
+            return None;
+        }
+
+        let mut sym_ptr: *const libc::Elf64_Sym = std::ptr::null();
+        let result = libc::dlinfo(
+            info.dli_fbase as *mut c_void,
+            RTLD_DI_SYMENT,
+            &mut sym_ptr as *mut _ as *mut c_void,
+        );
+
+        if result != 0 || sym_ptr.is_null() {
+            return None;
+        }
+
+        Some((*sym_ptr).st_size as usize)
+    }
+}
+
 
 fn apply_branch_patch(
     src: FuncPtrInternal,
