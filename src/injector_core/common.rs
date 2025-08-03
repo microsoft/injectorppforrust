@@ -60,7 +60,7 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
 /// Allocate JIT memory on Unix platforms.
 ///
 /// On MacOS, both aarch64 and x86_64 architectures have a ±2GB memory range.
-/// On MacOS, both aarch64 and x86_64 architectures have a ±128MB memory range.
+/// On Linux, both aarch64 and x86_64 architectures have a ±128MB memory range.
 /// Other architectures have no enforced address range constraint.
 ///
 /// # Panics
