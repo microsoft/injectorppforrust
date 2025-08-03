@@ -17,20 +17,30 @@ impl PatchTrait for PatchArm64 {
     const JIT_SIZE: usize = 20;
 
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    {
-        if let Some(size) = get_function_size(src.as_ptr()) {
-            if size < PATCH_SIZE {
-                panic!(
-                    "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
-                    src.as_ptr(),
-                    size,
-                    PATCH_SIZE
-                );
-            }
-        } else {
-            panic!("Unable to determine function size for {:?}", src.as_ptr());
+{
+    if let Some(size) = get_function_size(src.as_ptr()) {
+        if size == 0 {
+            panic!(
+                "Function at address {:?} has st_size == 0 (unknown size). Refusing to patch.",
+                src.as_ptr()
+            );
         }
+        if size < PATCH_SIZE {
+            panic!(
+                "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
+                src.as_ptr(),
+                size,
+                PATCH_SIZE
+            );
+        }
+    } else {
+        panic!(
+            "Unable to determine function size for {:?}; refusing to patch.",
+            src.as_ptr()
+        );
     }
+}
+
 
     let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
     let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
@@ -45,20 +55,30 @@ impl PatchTrait for PatchArm64 {
     const JIT_SIZE: usize = 8;
 
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    {
-        if let Some(size) = get_function_size(src.as_ptr()) {
-            if size < PATCH_SIZE {
-                panic!(
-                    "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
-                    src.as_ptr(),
-                    size,
-                    PATCH_SIZE
-                );
-            }
-        } else {
-            panic!("Unable to determine function size for {:?}", src.as_ptr());
+{
+    if let Some(size) = get_function_size(src.as_ptr()) {
+        if size == 0 {
+            panic!(
+                "Function at address {:?} has st_size == 0 (unknown size). Refusing to patch.",
+                src.as_ptr()
+            );
         }
+        if size < PATCH_SIZE {
+            panic!(
+                "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
+                src.as_ptr(),
+                size,
+                PATCH_SIZE
+            );
+        }
+    } else {
+        panic!(
+            "Unable to determine function size for {:?}; refusing to patch.",
+            src.as_ptr()
+        );
     }
+}
+
 
     let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
     let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
