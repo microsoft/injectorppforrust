@@ -6,7 +6,7 @@ use injectorpp::interface::injector::FuncPtr;
 #[no_mangle]
 #[inline(never)]
 pub fn too_small_to_patch() -> u64 {
-    1
+      unsafe { core::ptr::read_volatile(&1) }
 }
 
 
