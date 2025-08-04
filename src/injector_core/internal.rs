@@ -6,6 +6,9 @@ use super::patch_arm64::PatchArm64;
 #[cfg(target_arch = "x86_64")]
 use super::patch_amd64::PatchAmd64;
 
+#[cfg(target_arch = "arm")]
+use super::patch_arm::PatchArm;
+
 use super::patch_trait::PatchTrait;
 
 /// An internal builder for patching a function. Not exposed publicly.
@@ -30,6 +33,11 @@ impl WhenCalled {
         {
             PatchAmd64::replace_function_with_other_function(self.func_ptr, target)
         }
+        
+        #[cfg(target_arch = "arm")]
+        {
+            PatchArm::replace_function_with_other_function(self.func_ptr, target)
+        }
     }
 
     /// Patches the target function so that it branches to a JIT block that returns the specified boolean.
@@ -42,6 +50,11 @@ impl WhenCalled {
         #[cfg(target_arch = "x86_64")]
         {
             PatchAmd64::replace_function_return_boolean(self.func_ptr, value)
+        }
+        
+        #[cfg(target_arch = "arm")]
+        {
+            PatchArm::replace_function_return_boolean(self.func_ptr, value)
         }
     }
 }
