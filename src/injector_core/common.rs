@@ -313,10 +313,7 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
     use mach2::vm::{mach_vm_protect, mach_vm_remap};
     use mach2::vm_inherit::VM_INHERIT_NONE;
     use mach2::vm_prot::VM_PROT_COPY;
-    use mach2::vm_statistics::{VM_FLAGS_ANYWHERE, VM_FLAGS_OVERWRITE};
-
-    // TODO: Why is this not defined in mach2?
-    const VM_FLAGS_RETURN_DATA_ADDR: i32 = 0x100000;
+    use mach2::vm_statistics::{VM_FLAGS_ANYWHERE, VM_FLAGS_OVERWRITE, VM_FLAGS_RETURN_DATA_ADDR};
 
     let mut addr = func as mach_vm_address_t;
     let mut remap: mach_vm_address_t = std::mem::zeroed();
