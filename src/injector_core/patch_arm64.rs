@@ -16,28 +16,8 @@ impl PatchTrait for PatchArm64 {
         const JIT_SIZE: usize = 20;
 
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-        {
-            if let Some(size) = get_function_size(src.as_ptr()) {
-                if size == 0 {
-                    panic!(
-                "Function at address {:?} has st_size == 0 (unknown size). Refusing to patch.",
-                src.as_ptr()
-            );
-                }
-                if size < PATCH_SIZE {
-                    panic!(
-                        "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
-                        src.as_ptr(),
-                        size,
-                        PATCH_SIZE
-                    );
-                }
-            } else {
-                panic!(
-                    "Unable to determine function size for {:?}; refusing to patch.",
-                    src.as_ptr()
-                );
-            }
+        unsafe {
+            ensure_patchable(&src, PATCH_SIZE);
         }
 
         let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
@@ -52,28 +32,8 @@ impl PatchTrait for PatchArm64 {
         const JIT_SIZE: usize = 8;
 
         #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-        {
-            if let Some(size) = get_function_size(src.as_ptr()) {
-                if size == 0 {
-                    panic!(
-                "Function at address {:?} has st_size == 0 (unknown size). Refusing to patch.",
-                src.as_ptr()
-            );
-                }
-                if size < PATCH_SIZE {
-                    panic!(
-                        "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
-                        src.as_ptr(),
-                        size,
-                        PATCH_SIZE
-                    );
-                }
-            } else {
-                panic!(
-                    "Unable to determine function size for {:?}; refusing to patch.",
-                    src.as_ptr()
-                );
-            }
+        unsafe {
+            ensure_patchable(&src, PATCH_SIZE);
         }
 
         let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
@@ -164,30 +124,28 @@ fn append_instruction(asm_code: &mut Vec<u8>, instruction: u32) {
 
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 #[inline]
-fn get_function_size(ptr: *const ()) -> Option<usize> {
+unsafe fn get_function_size(ptr: *const ()) -> Option<usize> {
     use libc::{c_int, c_void, Dl_info};
 
     const RTLD_DI_SYMENT: c_int = 2;
 
-    unsafe {
-        let mut info: Dl_info = std::mem::zeroed();
-        if libc::dladdr(ptr as *const c_void, &mut info) == 0 {
-            return None;
-        }
-
-        let mut sym_ptr: *const libc::Elf64_Sym = std::ptr::null();
-        let result = libc::dlinfo(
-            info.dli_fbase as *mut c_void,
-            RTLD_DI_SYMENT,
-            &mut sym_ptr as *mut _ as *mut c_void,
-        );
-
-        if result != 0 || sym_ptr.is_null() {
-            return None;
-        }
-
-        Some((*sym_ptr).st_size as usize)
+    let mut info: Dl_info = std::mem::zeroed();
+    if libc::dladdr(ptr as *const c_void, &mut info) == 0 {
+        return None;
     }
+
+    let mut sym_ptr: *const libc::Elf64_Sym = std::ptr::null();
+    let result = libc::dlinfo(
+        info.dli_fbase as *mut c_void,
+        RTLD_DI_SYMENT,
+        &mut sym_ptr as *mut _ as *mut c_void,
+    );
+
+    if result != 0 || sym_ptr.is_null() {
+        return None;
+    }
+
+    Some((*sym_ptr).st_size as usize)
 }
 
 fn apply_branch_patch(
@@ -226,4 +184,30 @@ fn apply_branch_patch(
         jit_memory,
         jit_size,
     )
+}
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[inline]
+unsafe fn ensure_patchable(src: &FuncPtrInternal, required_size: usize) {
+    if let Some(size) = unsafe { get_function_size(src.as_ptr()) } {
+        if size == 0 {
+            panic!(
+                "Function at address {:?} has unknown size (st_size == 0); refusing to patch.",
+                src.as_ptr()
+            );
+        }
+        if size < required_size {
+            panic!(
+                "Function at address {:?} is too small ({} bytes). Required: {} bytes.",
+                src.as_ptr(),
+                size,
+                required_size
+            );
+        }
+    } else {
+        panic!(
+            "Unable to determine function size for {:?}; refusing to patch.",
+            src.as_ptr()
+        );
+    }
 }
