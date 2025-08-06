@@ -339,3 +339,51 @@ pub(crate) fn emit_movz(
 
     code_bits
 }
+
+/// Emit machine code for a long jump if the target falls out of range of the +-128MB bounds imposed
+/// by ARM's branch instruction. If it is, we use the x16 register to store the address and jump
+/// there as such:
+///
+/// ADRP x16, target
+/// ADD x16, x16, #:lo12:
+/// BR x16
+#[cfg(target_os = "macos")]
+pub(crate) fn maybe_emit_long_jump(pc: usize, target: usize) -> Vec<u32> {
+    // We are storing the address in x16.
+    const REGISTER: u32 = 16;
+
+    let mut words = Vec::with_capacity(3);
+
+    // Simple B case where we are in bounds.
+    let disp = (target as i128).wrapping_sub(pc as i128);
+    if (-(1i128 << 27)..(1i128 << 27)).contains(&disp) {
+        let imm26 = ((disp >> 2) as u32) & 0x03ff_ffff;
+        let b_inst = 0b000101 << 26 | imm26;
+        words.push(b_inst);
+        return words;
+    }
+
+    let page_pc = pc & !0xfff;
+    let page_target = target & !0xfff;
+    let page_diff = ((page_target as i64).wrapping_sub(page_pc as i64)) >> 12;
+
+    // Split up the page difference into a 21 bit signed immediate.
+    let imm21 = (page_diff as u64) & 0x1f_ffff;
+    let immlo = (imm21 & 0b11) as u32;
+    let immhi = ((imm21 >> 2) & 0x7ffff) as u32;
+
+    // ADRP instruction.
+    let adrp = 0x9000_0000 | (immlo << 29) | (immhi << 5) | REGISTER;
+    words.push(adrp);
+
+    // ADD instruction with the low 12 bits.
+    let low12 = (target & 0xfff) as u32;
+    let add = 0x9100_0000 | (low12 << 10) | (REGISTER << 5) | REGISTER;
+    words.push(add);
+
+    // BR instruction to register 16.
+    let br = 0xd61f_0000 | (REGISTER << 5);
+    words.push(br);
+
+    words
+}

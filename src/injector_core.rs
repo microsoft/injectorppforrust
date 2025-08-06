@@ -2,6 +2,7 @@ pub(crate) mod arm64_codegenerator;
 pub(crate) mod common;
 pub(crate) mod internal;
 pub(crate) mod linuxapi;
+pub(crate) mod macosapi;
 pub(crate) mod patch_amd64;
 pub(crate) mod patch_arm;
 pub(crate) mod patch_arm64;
