@@ -15,6 +15,11 @@ impl PatchTrait for PatchArm64 {
         const PATCH_SIZE: usize = 12;
         const JIT_SIZE: usize = 20;
 
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        unsafe {
+            assert_min_patch_window_or_panic(&src, PATCH_SIZE);
+        }
+
         let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
         let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
         generate_will_execute_jit_code_abs(jit_memory, target.as_ptr());
@@ -25,6 +30,11 @@ impl PatchTrait for PatchArm64 {
     fn replace_function_return_boolean(src: FuncPtrInternal, value: bool) -> PatchGuard {
         const PATCH_SIZE: usize = 12;
         const JIT_SIZE: usize = 8;
+
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        unsafe {
+            assert_min_patch_window_or_panic(&src, PATCH_SIZE);
+        }
 
         let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, PATCH_SIZE) };
         let jit_memory = allocate_jit_memory(&src, JIT_SIZE);
