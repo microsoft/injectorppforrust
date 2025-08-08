@@ -167,3 +167,65 @@ fn apply_branch_patch(
         jit_size,
     )
 }
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+unsafe fn assert_min_patch_window_or_panic(
+    src: &crate::injector_core::common::FuncPtrInternal,
+    patch_size: usize,
+) {
+    assert!(
+        patch_size % 4 == 0,
+        "PATCH_SIZE must be a multiple of 4 on AArch64 (got {patch_size})"
+    );
+
+
+    let buf = read_bytes(src.as_ptr() as *mut u8, patch_size);
+
+    for (idx, chunk) in buf.chunks_exact(4).enumerate() {
+        let w = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+
+        // Allow a top-of-entry veneer (unconditional B) at +0 only.
+        if idx == 0 && is_a64_b_uncond_imm(w) {
+            continue;
+        }
+
+        // Refuse to patch if we see any hard, non-fallthrough terminators:
+        //  - RET anywhere in the patch window
+        //  - BR Xn anywhere in the patch window (indirect tail)
+        //  - B imm26 if it appears after the first instruction
+        if is_a64_ret(w) || is_a64_br_reg(w) || is_a64_b_uncond_imm(w) {
+            let at = idx * 4;
+            panic!(
+                "Target function too small: terminator in first {patch_size} bytes (at +{:#x}). \
+                 Refusing to patch to avoid UB.",
+                at
+            );
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[inline]
+fn is_a64_ret(w: u32) -> bool {
+    // RET Xn: 1101 0110 0101 1111 0000 00 Rn 00000
+    const MASK: u32 = 0xFFFF_FC1F;
+    const BASE: u32 = 0xD65F_0000;
+    (w & MASK) == BASE
+}
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[inline]
+fn is_a64_br_reg(w: u32) -> bool {
+    // BR Xn: 1101 0110 0001 1111 0000 00 Rn 00000
+    const MASK: u32 = 0xFFFF_FC1F;
+    const BASE: u32 = 0xD61F_0000;
+    (w & MASK) == BASE
+}
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[inline]
+fn is_a64_b_uncond_imm(w: u32) -> bool {
+    // B imm26: top 6 bits == 000101
+    (w & 0x7C00_0000) == 0x1400_0000
+}
+
