@@ -1,7 +1,7 @@
 use injectorpp::interface::injector::*;
-use std::path::MAIN_SEPARATOR;
 use std::fmt::Display;
 use std::path::Path;
+use std::path::MAIN_SEPARATOR;
 
 pub fn fake_path_exists() -> bool {
     println!("fake_path_exists executed.");
