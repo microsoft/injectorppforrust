@@ -273,12 +273,12 @@ macro_rules! fake {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  { $($assign)* }
                  $ret_val
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
@@ -298,7 +298,7 @@ macro_rules! fake {
                  { $($assign)* }
                  $ret_val
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
@@ -319,11 +319,11 @@ macro_rules! fake {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  $ret_val
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
@@ -341,7 +341,7 @@ macro_rules! fake {
              if $cond {
                  $ret_val
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
@@ -358,7 +358,7 @@ macro_rules! fake {
              if $cond {
                  $ret_val
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
@@ -379,7 +379,7 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  { $($assign)* }
                  $ret_val
@@ -423,7 +423,7 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  $ret_val
              } else {
@@ -484,11 +484,11 @@ macro_rules! fake {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  { $($assign)* }
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
@@ -508,11 +508,11 @@ macro_rules! fake {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  ()
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
@@ -530,7 +530,7 @@ macro_rules! fake {
              if $cond {
                  { $($assign)* }
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> () = fake;
@@ -568,12 +568,12 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  { $($assign)* }
                  ()
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: fn($($arg_ty),*) -> () = fake;
@@ -592,7 +592,7 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  ()
              } else {
@@ -647,7 +647,7 @@ macro_rules! fake {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 $ret_val
             } else {
@@ -691,7 +691,7 @@ macro_rules! fake {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 { $($assign)* }
                 $ret_val
@@ -716,7 +716,7 @@ macro_rules! fake {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 ()
             } else {
@@ -758,12 +758,12 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  { $($assign)* }
                  ()
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: unsafe fn($($arg_ty),*) -> () = fake;
@@ -799,12 +799,12 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 { $($assign)* }
                 $ret_val
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
@@ -824,7 +824,7 @@ macro_rules! fake {
                 { $($assign)* }
                 $ret_val
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
@@ -845,11 +845,11 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 $ret_val
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
@@ -870,7 +870,7 @@ macro_rules! fake {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 { $($assign)* }
                 $ret_val
@@ -914,7 +914,7 @@ macro_rules! fake {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 $ret_val
             } else {
@@ -940,11 +940,11 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 { $($assign)* }
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> () = fake;
@@ -964,11 +964,11 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 ()
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> () = fake;
@@ -986,7 +986,7 @@ macro_rules! fake {
             if $cond {
                 { $($assign)* }
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> () = fake;
@@ -1024,12 +1024,12 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  { $($assign)* }
                  ()
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: unsafe extern "C" fn($($arg_ty),*) -> () = fake;
@@ -1048,7 +1048,7 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  ()
              } else {
@@ -1087,12 +1087,12 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 { $($assign)* }
                 $ret_val
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
@@ -1112,7 +1112,7 @@ macro_rules! fake {
                 { $($assign)* }
                 $ret_val
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
@@ -1133,11 +1133,11 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 $ret_val
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
@@ -1158,7 +1158,7 @@ macro_rules! fake {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 { $($assign)* }
                 $ret_val
@@ -1202,7 +1202,7 @@ macro_rules! fake {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 $ret_val
             } else {
@@ -1244,11 +1244,11 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 { $($assign)* }
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
@@ -1268,11 +1268,11 @@ macro_rules! fake {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                 if prev >= $expected {
-                    panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                    panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                 }
                 ()
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
@@ -1290,7 +1290,7 @@ macro_rules! fake {
             if $cond {
                 { $($assign)* }
             } else {
-                panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
             }
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
@@ -1328,12 +1328,12 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  { $($assign)* }
                  ()
              } else {
-                 panic!("Fake function defined at {file!()}:{line!()}:{column!()} called with unexpected arguments");
+                 panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
          let f: unsafe extern "system" fn($($arg_ty),*) -> () = fake;
@@ -1352,7 +1352,7 @@ macro_rules! fake {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
                  if prev >= $expected {
-                     panic!("Fake function defined at {file!()}:{line!()}:{column!()} called more times than expected");
+                     panic!("Fake function defined at {}:{}:{} called more times than expected", file!(), line!(), column!());
                  }
                  ()
              } else {

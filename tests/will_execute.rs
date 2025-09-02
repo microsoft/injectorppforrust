@@ -1,4 +1,5 @@
 use injectorpp::interface::injector::*;
+use std::path::MAIN_SEPARATOR;
 use std::fmt::Display;
 use std::path::Path;
 
@@ -162,7 +163,7 @@ fn test_will_execute_when_fake_no_return_function_over_called_should_panic() {
 
     assert_eq!(
         message_str,
-        "Fake function defined at tests\\will_execute.rs:142:23 called more times than expected"
+        format!("Fake function defined at tests{MAIN_SEPARATOR}will_execute.rs:143:23 called more times than expected")
     );
 }
 
