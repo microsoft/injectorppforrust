@@ -160,7 +160,7 @@ fn test_will_execute_when_fake_no_return_function_over_called_should_panic() {
         .or_else(|| message.downcast_ref::<String>().map(|s| s.as_str()))
         .unwrap();
 
-    assert_eq!(message_str, "Fake function called more times than expected");
+    assert_eq!(message_str, "Fake function defined at tests\\will_execute.rs:142:23 called more times than expected");
 }
 
 #[test]
