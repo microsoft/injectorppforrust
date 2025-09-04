@@ -33,7 +33,7 @@ impl WhenCalled {
         {
             PatchAmd64::replace_function_with_other_function(self.func_ptr, target)
         }
-        
+
         #[cfg(target_arch = "arm")]
         {
             PatchArm::replace_function_with_other_function(self.func_ptr, target)
@@ -51,7 +51,7 @@ impl WhenCalled {
         {
             PatchAmd64::replace_function_return_boolean(self.func_ptr, value)
         }
-        
+
         #[cfg(target_arch = "arm")]
         {
             PatchArm::replace_function_return_boolean(self.func_ptr, value)

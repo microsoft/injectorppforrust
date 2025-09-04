@@ -24,8 +24,7 @@ impl Drop for CallCountVerifier {
                 }
 
                 panic!(
-                    "Fake function was expected to be called {} time(s), but it is actually called {} time(s)",
-                    expected, call_times
+                    "Fake function was expected to be called {expected} time(s), but it is actually called {call_times} time(s)"
                 );
             }
         }

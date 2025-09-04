@@ -1,6 +1,7 @@
 use injectorpp::interface::injector::*;
 use std::fmt::Display;
 use std::path::Path;
+use std::path::MAIN_SEPARATOR;
 
 pub fn fake_path_exists() -> bool {
     println!("fake_path_exists executed.");
@@ -160,7 +161,10 @@ fn test_will_execute_when_fake_no_return_function_over_called_should_panic() {
         .or_else(|| message.downcast_ref::<String>().map(|s| s.as_str()))
         .unwrap();
 
-    assert_eq!(message_str, "Fake function called more times than expected");
+    assert_eq!(
+        message_str,
+        format!("Fake function defined at tests{MAIN_SEPARATOR}will_execute.rs:143:23 called more times than expected")
+    );
 }
 
 #[test]
