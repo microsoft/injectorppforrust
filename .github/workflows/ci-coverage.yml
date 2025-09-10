@@ -18,7 +18,7 @@ jobs:
           override: true
 
       - name: Install Tarpaulin
-        run: cargo install cargo-tarpaulin --version 0.23.0 --force
+        run: cargo install cargo-tarpaulin --version 0.32.0 --force
 
       - name: Run Tarpaulin -> JSON summary
         run: |
