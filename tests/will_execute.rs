@@ -107,7 +107,7 @@ fn test_will_execute_when_fake_std_fs_read_should_success() {
             injectorpp::func!(fn (std::fs::read)(&'static str) -> std::io::Result<Vec<u8>>),
         )
         .will_execute(injectorpp::fake!(
-            func_type: fn(_path: &str) -> std::io::Result<Vec<u8>>,
+            func_type: fn(_path: &'static str) -> std::io::Result<Vec<u8>>,
             returns: Ok(vec![1, 2, 3])
         ));
 
@@ -192,7 +192,7 @@ fn test_will_execute_when_fake_generic_function_single_type_should_success() {
             fn (complex_generic_single_type_always_fail_func)(&'static str) -> std::io::Result<()>
         ))
         .will_execute(injectorpp::fake!(
-            func_type: fn(path: &str) -> std::io::Result<()>,
+            func_type: fn(path: &'static str) -> std::io::Result<()>,
             when: path == "/not/exist/path",
             returns: Ok(()),
             times: 1
@@ -212,7 +212,7 @@ fn test_will_execute_when_fake_generic_function_single_type_can_recover() {
                 fn (complex_generic_single_type_always_fail_func)(&'static str) -> std::io::Result<()>
             ))
             .will_execute(injectorpp::fake!(
-                func_type: fn(path: &str) -> std::io::Result<()>,
+                func_type: fn(path: &'static str) -> std::io::Result<()>,
                 when: path == "/not/exist/path",
                 returns: Ok(()),
                 times: 1
@@ -236,7 +236,7 @@ fn test_will_execute_when_fake_generic_function_multiple_types_should_success() 
             fn (complex_generic_multiple_types_func)(&'static str, bool, i32) -> String
         ))
         .will_execute(injectorpp::fake!(
-            func_type: fn(a: &str, b: bool, c: i32) -> String,
+            func_type: fn(a: &'static str, b: bool, c: i32) -> String,
             when: a == "abc" && b == true && c == 123,
             returns: "Fake value".to_string(),
             times: 1
