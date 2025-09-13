@@ -98,7 +98,7 @@ fn test_will_execute_raw_when_fake_generic_function_single_type_should_success()
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,
-            fn(&str) -> std::io::Result<()>
+            fn(&'static str) -> std::io::Result<()>
         ));
 
     let actual_result = complex_generic_single_type_always_fail_func("/not/exist/path");
@@ -123,7 +123,7 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_should_succes
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,
-            fn(&str, bool, i32) -> String
+            fn(&'static str, bool, i32) -> String
         ));
 
     let actual_result = complex_generic_multiple_types_func("abc", true, 123);
@@ -168,7 +168,7 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_with_differen
         ))
         .will_execute_raw(injectorpp::closure!(
             fake_closure,
-            fn(&str, bool, i32) -> String
+            fn(&'static str, bool, i32) -> String
         ));
 
     // Call the function with condition 1 twice.
