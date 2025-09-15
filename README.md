@@ -35,7 +35,7 @@ With injectorpp, you can write tests without needing to modify the production co
 ```rust
 let mut injector = InjectorPP::new();
 injector
-    .when_called(injectorpp::func!(fn (fs::create_dir_all)(&'static str) -> std::io::Result<()>)
+    .when_called(injectorpp::func!(fn (fs::create_dir_all)(&'static str) -> std::io::Result<()>))
     .will_execute(injectorpp::fake!(
         func_type: fn(path: &str) -> std::io::Result<()>,
         when: path == "/tmp/target_files",
@@ -53,6 +53,7 @@ The above config make sure when `fs::create_dir_all` is called with `/tmp/target
 This approach eliminates the need to make a trait solely for testing purposes. It also ensures that previously non-unit testable code is now unit testable.
 
 # Supported Platform
+
 - OS: Linux and Windows
 - Arch: arm64 and amd64
 
