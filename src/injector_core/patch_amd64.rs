@@ -1,4 +1,5 @@
 #![cfg(target_arch = "x86_64")]
+#![allow(dead_code)]
 
 use crate::injector_core::common::*;
 use crate::injector_core::patch_trait::*;

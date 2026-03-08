@@ -1,5 +1,6 @@
 use crate::injector_core::common::*;
 
+#[allow(dead_code)]
 pub(crate) trait PatchTrait {
     fn replace_function_with_other_function(
         src: FuncPtrInternal,

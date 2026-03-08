@@ -245,6 +245,7 @@ pub(crate) unsafe fn read_bytes(ptr: *const u8, len: usize) -> Vec<u8> {
 
 /// A guard that stores the original bytes of a patched function and the allocated JIT memory.
 /// When dropped, it restores the original function code and frees the JIT memory.
+#[allow(dead_code)]
 pub(crate) struct PatchGuard {
     func_ptr: *mut u8,
     original_bytes: Vec<u8>,
@@ -255,6 +256,7 @@ pub(crate) struct PatchGuard {
     jit_size: usize,
 }
 
+#[allow(dead_code)]
 impl PatchGuard {
     pub(crate) fn new(
         func_ptr: *mut u8,
