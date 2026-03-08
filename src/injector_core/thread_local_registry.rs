@@ -8,6 +8,9 @@ use std::sync::Mutex;
 
 use crate::injector_core::common::*;
 
+#[cfg(target_os = "linux")]
+use crate::injector_core::linuxapi::__clear_cache;
+
 #[cfg(target_os = "windows")]
 use crate::injector_core::winapi::*;
 
@@ -949,7 +952,7 @@ unsafe fn clear_cache_ptr(ptr: *mut u8, size: usize) {
 
     #[cfg(target_os = "linux")]
     {
-        libc::__clear_cache(ptr, ptr.add(size));
+        __clear_cache(ptr, ptr.add(size));
     }
 }
 

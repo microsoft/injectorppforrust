@@ -6,6 +6,7 @@ pub use crate::interface::macros::__assert_future_output;
 pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;
+#[cfg(target_arch = "x86_64")]
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::Context;
