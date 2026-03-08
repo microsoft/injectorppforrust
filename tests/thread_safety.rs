@@ -1,7 +1,9 @@
-/// Comprehensive thread safety tests for injectorpp.
-///
-/// Verifies that thread-local dispatch correctly isolates function replacements
-/// per-thread, enabling parallel test execution without interference.
+// These tests are excluded from Windows coverage builds (nightly + cargo-llvm-cov)
+// because coverage instrumentation changes function prologues in ways that conflict
+// with JIT dispatcher/trampoline code generation. The tests are still validated in
+// the regular CI workflow using the stable toolchain.
+#![cfg(not(all(target_os = "windows", coverage_nightly)))]
+
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
