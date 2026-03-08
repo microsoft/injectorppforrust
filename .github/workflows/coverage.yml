@@ -65,13 +65,21 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       # Run coverage in one logical command (no backslashes)
+      # On Windows, skip thread_safety tests because nightly coverage
+      # instrumentation changes function prologues in ways that conflict
+      # with the JIT dispatcher/trampoline code generation. These tests
+      # are still validated in the regular CI workflow (stable toolchain).
       - name: Run coverage
         env:
           RUSTFLAGS: "-C instrument-coverage"
           CARGO_INCREMENTAL: "0"
         shell: bash
         run: |
-          cargo llvm-cov --branch --workspace --html --target ${{ matrix.target }}
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cargo llvm-cov --branch --workspace --html --target ${{ matrix.target }} -- --skip thread_safety
+          else
+            cargo llvm-cov --branch --workspace --html --target ${{ matrix.target }}
+          fi
 
       - name: Move HTML report
         run: mv target/llvm-cov/html target/coverage-${{ matrix.os }}-${{ matrix.target }}

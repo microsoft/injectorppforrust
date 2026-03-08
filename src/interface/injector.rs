@@ -20,6 +20,13 @@ use std::sync::MutexGuard;
 #[cfg(target_arch = "x86_64")]
 use crate::injector_core::thread_local_registry::ThreadRegistration;
 
+/// Normalize a type_name signature by removing anonymous lifetime annotations.
+/// Newer Rust versions (1.86+) render elided lifetimes as `&'_ T` instead of `&T`,
+/// which causes false signature mismatches.
+fn normalize_signature(sig: &str) -> String {
+    sig.replace("&'_ ", "&")
+}
+
 /// A `Mutex` that never stays poisoned: on panic it just recovers the guard.
 ///
 /// Only used on non-x86_64 architectures where the global mutex approach is still used.
@@ -396,7 +403,7 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
-        if target.signature != self.expected_signature {
+        if normalize_signature(target.signature) != normalize_signature(self.expected_signature) {
             panic!(
                 "Signature mismatch: expected {:?} but got {:?}",
                 self.expected_signature, target.signature
@@ -598,7 +605,7 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub fn will_return_async(self, target: FuncPtr) {
-        if target.signature != self.expected_signature {
+        if normalize_signature(target.signature) != normalize_signature(self.expected_signature) {
             panic!(
                 "Signature mismatch: expected {:?} but got {:?}",
                 self.expected_signature, target.signature
