@@ -18,7 +18,7 @@ thread_local! {
     static THREAD_REPLACEMENTS: UnsafeCell<HashMap<usize, usize>> = UnsafeCell::new(HashMap::new());
     // Reentrancy guard: prevents infinite recursion when a patched function
     // (like memset) is called internally during our HashMap operations.
-    static IN_TLS_OP: Cell<bool> = Cell::new(false);
+    static IN_TLS_OP: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Read from thread-local replacements map with reentrancy protection.
@@ -170,13 +170,11 @@ pub(crate) fn register_replacement(
     {
         let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
 
-        if !registry.contains_key(&method_key) {
-            // First time this function is being patched — install dispatcher infrastructure
-            let entry = install_dispatcher(func_addr, method_key);
-            registry.insert(method_key, entry);
-        }
+        let entry = registry
+            .entry(method_key)
+            .or_insert_with(|| install_dispatcher(func_addr, method_key));
 
-        registry.get_mut(&method_key).unwrap().ref_count += 1;
+        entry.ref_count += 1;
     }
 
     // Set thread-local replacement
