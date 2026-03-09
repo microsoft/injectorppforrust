@@ -313,61 +313,28 @@ fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEn
 }
 
 /// Generate a 12-byte branch patch for ARM64.
-/// Uses MOVZ/MOVK/BR x16 to load absolute address (no range limit).
-/// x16 (IP0) is the intra-procedure-call scratch register, safe to clobber.
+/// Uses `maybe_emit_long_jump` which handles both:
+/// - Short range (±32MB): B instruction + 2 NOPs
+/// - Long range: ADRP + ADD + BR x16 (±4GB page-relative)
 #[cfg(target_arch = "aarch64")]
 fn generate_branch_patch_aarch64(from: usize, to: usize) -> Vec<u8> {
-    let _ = from; // absolute branch, no offset needed
-    let addr = to as u64;
-    let reg: [bool; 5] = u8_to_bits::<5>(16); // x16 (IP0)
-
-    let movz = emit_movz_from_address(addr, 0, true, u8_to_bits::<2>(0), reg);
-    let movk1 = emit_movk_from_address(addr, 16, true, u8_to_bits::<2>(1), reg);
-    // For addresses that fit in 32 bits, the upper halves are zero.
-    // But we still need 3 instructions to fill the 12-byte patch slot.
-    // Use MOVK for bits 32-47, then BR.
-    let movk2 = emit_movk_from_address(addr, 32, true, u8_to_bits::<2>(2), reg);
+    let instrs: Vec<u32> =
+        crate::injector_core::arm64_codegenerator::maybe_emit_long_jump(from, to);
+    let nop: u32 = 0xd503201f;
 
     let mut code = Vec::with_capacity(12);
-    // We need exactly 12 bytes (3 instructions).
-    // MOVZ x16, #lo16 + MOVK x16, #hi16, lsl #16 + BR x16
-    // But this only handles 32-bit addresses. For 64-bit we need 4 MOV + BR = 20 bytes.
-    // Since the patch size is 12 bytes, we need a trampoline approach if > 32 bits.
-    // However, allocate_jit_memory guarantees ±128MB, and we can use B instruction
-    // if within range. Let's use the same approach as patch_arm64.rs.
-
-    // Try direct B instruction first (±32MB range, 4 bytes + 2 NOPs)
-    let offset = (to as isize - from as isize) / 4;
-    const BRANCH_RANGE: std::ops::RangeInclusive<isize> = -0x2000000..=0x1FFF_FFFF;
-
-    if BRANCH_RANGE.contains(&offset) {
-        let branch_instr: u32 = 0x14000000 | ((offset as u32) & 0x03FF_FFFF);
-        let nop: u32 = 0xd503201f;
-        code.extend_from_slice(&branch_instr.to_le_bytes());
+    if instrs.len() == 1 {
+        // Short B instruction + 2 NOPs to fill 12 bytes
+        code.extend_from_slice(&instrs[0].to_le_bytes());
         code.extend_from_slice(&nop.to_le_bytes());
         code.extend_from_slice(&nop.to_le_bytes());
     } else {
-        // Fall back to MOVZ + MOVK + BR (handles full 48-bit address space)
-        append_instruction_to_vec(&mut code, bool_array_to_u32(movz));
-        append_instruction_to_vec(&mut code, bool_array_to_u32(movk1));
-        // Combine bits 32-63 check: if upper 32 bits are zero, use BR directly
-        // Otherwise use MOVK. But we only have 3 instruction slots.
-        // For most userspace addresses, bits 48-63 are 0 or 0xFFFF (canonical).
-        // Use MOVK for bits 32-47, then a separate trampoline for bits 48-63.
-        // Actually, since dispatcher JIT is allocated within ±128MB, we should
-        // always be within B range. Panic if not.
-        append_instruction_to_vec(&mut code, bool_array_to_u32(movk2));
-        // This path won't include BR — we'd need a 4th instruction.
-        // Since allocate_jit_memory guarantees ±128MB and B reaches ±32MB,
-        // this should never be reached in practice.
-        panic!("ARM64 dispatcher JIT is out of B instruction range (±32MB). This should not happen.");
+        // ADRP + ADD + BR (3 instructions = 12 bytes)
+        for insn in &instrs {
+            code.extend_from_slice(&insn.to_le_bytes());
+        }
     }
     code
-}
-
-#[cfg(target_arch = "aarch64")]
-fn append_instruction_to_vec(code: &mut Vec<u8>, insn: u32) {
-    code.extend_from_slice(&insn.to_le_bytes());
 }
 
 /// Generate ARM64 dispatcher JIT code.
@@ -467,10 +434,8 @@ fn generate_dispatcher_aarch64(
 
 /// Create a trampoline for ARM64: copy original instructions + absolute branch back.
 /// ARM64 instructions are fixed 4 bytes, so copy_size is always instruction-aligned.
-/// No PC-relative fixup is needed for the first 12 bytes of typical functions
-/// (they usually start with stack frame setup, not PC-relative loads).
-/// For PC-relative instructions (ADRP, ADR, LDR literal, B/BL), we NOP them out
-/// since they're typically coverage counters or non-essential for the trampoline path.
+/// PC-relative instructions (ADRP, ADR, B/BL, LDR literal, etc.) are adjusted to
+/// account for the trampoline's different address.
 #[cfg(target_arch = "aarch64")]
 fn create_trampoline_aarch64(
     func_addr: *mut u8,
@@ -484,128 +449,192 @@ fn create_trampoline_aarch64(
         unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(func_addr as *mut ()).unwrap()) };
     let trampoline = allocate_jit_memory(&near_src, trampoline_total);
 
-    // Copy original instruction bytes
+    // Build the complete trampoline content in a local buffer
+    let mut buf = vec![0u8; trampoline_total];
+
+    // Copy original instruction bytes into buffer
     unsafe {
-        std::ptr::copy_nonoverlapping(func_addr, trampoline, copy_size);
+        std::ptr::copy_nonoverlapping(func_addr, buf.as_mut_ptr(), copy_size);
     }
 
-    // Fix up PC-relative instructions in the copied code
-    fixup_aarch64_pc_relative(trampoline, func_addr, copy_size);
+    // Fix up PC-relative instructions in the buffer (using trampoline's target address)
+    fixup_aarch64_pc_relative_buf(&mut buf, trampoline, func_addr, copy_size);
 
     // Append absolute jump back to original + copy_size
     let jump_back_target = (func_addr as usize + copy_size) as u64;
     let reg: [bool; 5] = u8_to_bits::<5>(16); // x16 (IP0) scratch register
 
-    let movz = emit_movz_from_address(jump_back_target, 0, true, u8_to_bits::<2>(0), reg);
-    let movk1 = emit_movk_from_address(jump_back_target, 16, true, u8_to_bits::<2>(1), reg);
-    let movk2 = emit_movk_from_address(jump_back_target, 32, true, u8_to_bits::<2>(2), reg);
-    let movk3 = emit_movk_from_address(jump_back_target, 48, true, u8_to_bits::<2>(3), reg);
-    let br = emit_br(reg);
+    let instrs: [u32; 5] = [
+        bool_array_to_u32(emit_movz_from_address(
+            jump_back_target,
+            0,
+            true,
+            u8_to_bits::<2>(0),
+            reg,
+        )),
+        bool_array_to_u32(emit_movk_from_address(
+            jump_back_target,
+            16,
+            true,
+            u8_to_bits::<2>(1),
+            reg,
+        )),
+        bool_array_to_u32(emit_movk_from_address(
+            jump_back_target,
+            32,
+            true,
+            u8_to_bits::<2>(2),
+            reg,
+        )),
+        bool_array_to_u32(emit_movk_from_address(
+            jump_back_target,
+            48,
+            true,
+            u8_to_bits::<2>(3),
+            reg,
+        )),
+        bool_array_to_u32(emit_br(reg)),
+    ];
+    for (i, insn) in instrs.iter().enumerate() {
+        buf[copy_size + i * 4..copy_size + (i + 1) * 4].copy_from_slice(&insn.to_le_bytes());
+    }
 
+    // Write the entire trampoline using inject_asm_code (handles macOS W^X + cache flush)
     unsafe {
-        let jmp_ptr = trampoline.add(copy_size);
-        let instrs: [u32; 5] = [
-            bool_array_to_u32(movz),
-            bool_array_to_u32(movk1),
-            bool_array_to_u32(movk2),
-            bool_array_to_u32(movk3),
-            bool_array_to_u32(br),
-        ];
-        for (i, insn) in instrs.iter().enumerate() {
-            std::ptr::copy_nonoverlapping(
-                insn.to_le_bytes().as_ptr(),
-                jmp_ptr.add(i * 4),
-                4,
-            );
-        }
-
-        clear_cache_ptr(trampoline, trampoline_total);
+        inject_asm_code(&buf, trampoline);
     }
 
     (trampoline, trampoline_total)
 }
 
-/// Fix up PC-relative instructions in an ARM64 trampoline.
+/// Fix up PC-relative instructions in an ARM64 trampoline buffer.
 ///
-/// ARM64 PC-relative instructions (ADRP, ADR, LDR literal, B, BL, B.cond, etc.)
-/// use offsets relative to the instruction's address. When copied to a trampoline
-/// at a different address, these offsets become invalid.
+/// ARM64 PC-relative instructions use offsets relative to the instruction's address.
+/// When copied to a trampoline at a different address, these offsets must be adjusted
+/// by the delta between the original and trampoline addresses.
 ///
-/// For ADRP/ADR: Adjust the immediate offset by the delta.
-/// For LDR literal: Adjust the 19-bit signed offset.
-/// For B/BL/B.cond/CBZ/CBNZ/TBZ/TBNZ: NOP them out (these would be coverage
-/// instrumentation or branches we don't need in the trampoline).
+/// `buf` contains the copied instructions (modified in-place).
+/// `trampoline_addr` is the target address where the buffer will be written.
+/// `original_addr` is where the instructions were originally located.
+///
+/// If the adjusted offset overflows the instruction's immediate field, the instruction
+/// is NOP-ed out (safe because the trampoline is followed by a jump back to the
+/// original function which will re-execute the correct code path).
 #[cfg(target_arch = "aarch64")]
-fn fixup_aarch64_pc_relative(trampoline: *mut u8, original_addr: *mut u8, copy_size: usize) {
+fn fixup_aarch64_pc_relative_buf(
+    buf: &mut [u8],
+    trampoline_addr: *mut u8,
+    original_addr: *mut u8,
+    copy_size: usize,
+) {
     let num_insns = copy_size / 4;
+    let nop: u32 = 0xd503201f;
+
     for i in 0..num_insns {
-        let insn = unsafe {
-            let ptr = trampoline.add(i * 4) as *const u32;
-            ptr.read_unaligned()
-        };
+        let offset = i * 4;
+        let insn = u32::from_le_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]]);
 
-        let nop: u32 = 0xd503201f;
-
-        // Check for PC-relative instructions and NOP them out.
-        // This is safe because these are typically:
-        // - Coverage instrumentation (ADRP + LDR/STR for counter increment)
-        // - Branch instructions that shouldn't be in the trampoline path
-        //
-        // The trampoline only needs to execute the original function's
-        // register setup / stack frame code, then jump back.
+        let orig_pc = original_addr as i64 + (i as i64) * 4;
+        let tramp_pc = trampoline_addr as i64 + (i as i64) * 4;
+        let delta_bytes = orig_pc - tramp_pc;
+        let delta_insns = delta_bytes / 4;
 
         let op_top6 = (insn >> 26) & 0x3F;
         let op_top8 = (insn >> 24) & 0xFF;
 
-        let is_pc_relative = matches!(op_top6,
-            // B (unconditional): 000101xx
-            0b000101 |
-            // BL: 100101xx  
-            0b100101
-        ) || matches!(op_top8,
-            // B.cond: 01010100
-            0x54 |
-            // CBZ: 00110100 / 10110100
-            0x34 | 0xB4 |
-            // CBNZ: 00110101 / 10110101
-            0x35 | 0xB5 |
-            // TBZ: 00110110 / 10110110
-            0x36 | 0xB6 |
-            // TBNZ: 00110111 / 10110111
-            0x37 | 0xB7 |
-            // LDR literal (32-bit): 00011000
-            0x18 |
-            // LDR literal (64-bit): 01011000
-            0x58 |
-            // LDRSW literal: 10011000
-            0x98 |
-            // LDR literal (SIMD 32): 00011100
-            0x1C |
-            // LDR literal (SIMD 64): 01011100
-            0x5C |
-            // LDR literal (SIMD 128): 10011100
-            0x9C
-        );
+        // ADRP: bit[31]=1, bits[28:24]=10000
+        // ADR:  bit[31]=0, bits[28:24]=10000
+        if (insn >> 24) & 0x1F == 0x10 {
+            let is_adrp = (insn >> 31) != 0;
+            // Extract immhi (bits 23:5) and immlo (bits 30:29)
+            let immlo = (insn >> 29) & 0x3;
+            let immhi = (insn >> 5) & 0x7FFFF;
+            let imm21 = (immhi << 2) | immlo;
+            let imm21_signed = if (imm21 >> 20) & 1 != 0 {
+                ((imm21 | 0xFFE00000) as i32) as i64
+            } else {
+                imm21 as i64
+            };
 
-        // ADRP: top bit = 1, bits[28:24] = 10000
-        // ADR:  top bit = 0, bits[28:24] = 10000
-        let is_adr_adrp = (insn >> 24) & 0x1F == 0x10;
+            let new_imm21 = if is_adrp {
+                // ADRP: target = (PC & ~0xFFF) + (imm21 << 12)
+                let page_delta = ((orig_pc & !0xFFF) - (tramp_pc & !0xFFF)) >> 12;
+                imm21_signed + page_delta
+            } else {
+                // ADR: target = PC + imm21
+                imm21_signed + delta_bytes
+            };
 
-        if is_pc_relative || is_adr_adrp {
-            // Try to adjust ADRP/ADR by recomputing the offset
-            if is_adr_adrp {
-                let delta = original_addr as i64 - trampoline as i64;
-                let insn_offset = (i * 4) as i64;
-                // For ADRP: immhi:immlo encode page-aligned offset
-                // For ADR: immhi:immlo encode byte offset
-                // Both are complex to re-encode. Since these are rare in the first
-                // 12 bytes of a function (typically stack frame setup), NOP them.
-                let _ = delta;
-                let _ = insn_offset;
+            if new_imm21 >= -(1 << 20) && new_imm21 < (1 << 20) {
+                let new_u = (new_imm21 as u32) & 0x1FFFFF;
+                let new_immhi = (new_u >> 2) & 0x7FFFF;
+                let new_immlo = new_u & 0x3;
+                let new_insn = (insn & !(0x7FFFF << 5) & !(0x3 << 29))
+                    | (new_immhi << 5)
+                    | (new_immlo << 29);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
             }
-            unsafe {
-                let ptr = trampoline.add(i * 4) as *mut u32;
-                ptr.write_unaligned(nop);
+            continue;
+        }
+
+        // B/BL: 26-bit signed offset (instruction-scaled)
+        if op_top6 == 0b000101 || op_top6 == 0b100101 {
+            let imm26 = insn & 0x03FFFFFF;
+            let imm26_signed = if (imm26 >> 25) & 1 != 0 {
+                (imm26 | 0xFC000000) as i32
+            } else {
+                imm26 as i32
+            };
+            let new_imm26 = (imm26_signed as i64) + delta_insns;
+            if new_imm26 >= -(1 << 25) && new_imm26 < (1 << 25) {
+                let new_insn =
+                    (insn & 0xFC000000) | ((new_imm26 as u32) & 0x03FFFFFF);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
+            }
+            continue;
+        }
+
+        // B.cond / CBZ / CBNZ / LDR literal: 19-bit signed offset (instruction-scaled)
+        if matches!(
+            op_top8,
+            0x54 | 0x34 | 0xB4 | 0x35 | 0xB5 | 0x18 | 0x58 | 0x98 | 0x1C | 0x5C | 0x9C
+        ) {
+            let imm19 = (insn >> 5) & 0x7FFFF;
+            let imm19_signed = if (imm19 >> 18) & 1 != 0 {
+                (imm19 | 0xFFF80000) as i32
+            } else {
+                imm19 as i32
+            };
+            let new_imm19 = (imm19_signed as i64) + delta_insns;
+            if new_imm19 >= -(1 << 18) && new_imm19 < (1 << 18) {
+                let new_insn =
+                    (insn & !(0x7FFFF << 5)) | (((new_imm19 as u32) & 0x7FFFF) << 5);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
+            }
+            continue;
+        }
+
+        // TBZ / TBNZ: 14-bit signed offset (instruction-scaled)
+        if matches!(op_top8, 0x36 | 0xB6 | 0x37 | 0xB7) {
+            let imm14 = (insn >> 5) & 0x3FFF;
+            let imm14_signed = if (imm14 >> 13) & 1 != 0 {
+                (imm14 | 0xFFFFC000) as i32
+            } else {
+                imm14 as i32
+            };
+            let new_imm14 = (imm14_signed as i64) + delta_insns;
+            if new_imm14 >= -(1 << 13) && new_imm14 < (1 << 13) {
+                let new_insn =
+                    (insn & !(0x3FFF << 5)) | (((new_imm14 as u32) & 0x3FFF) << 5);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
             }
         }
     }
