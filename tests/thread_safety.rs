@@ -1,12 +1,7 @@
 // Thread-local dispatch is only available on x86_64. On other architectures,
 // InjectorPP uses a global mutex which deadlocks with the barrier-based
 // synchronization these tests rely on.
-//
-// Also excluded from Windows coverage builds (nightly + cargo-llvm-cov) because
-// coverage instrumentation changes function prologues in ways that conflict with
-// JIT dispatcher/trampoline code generation.
 #![cfg(target_arch = "x86_64")]
-#![cfg(not(all(target_os = "windows", coverage_nightly)))]
 
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};

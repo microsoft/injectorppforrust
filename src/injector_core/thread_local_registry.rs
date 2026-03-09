@@ -523,6 +523,12 @@ fn create_trampoline(func_addr: *mut u8, _method_key: usize) -> (*mut u8, usize,
 /// point to the same absolute targets as the original instructions.
 ///
 /// `delta` = original_addr - trampoline_addr (add to disp32 to correct it).
+///
+/// If the adjusted displacement overflows i32, the instruction is NOP-ed out.
+/// This happens when coverage instrumentation inserts `lock inc [rip+disp32]`
+/// and the coverage counter is too far from the trampoline for a 32-bit
+/// displacement. NOP-ing the counter increment is safe — it only affects
+/// profiling accuracy, not functional behavior.
 fn fixup_rip_relative_instructions(
     trampoline: *mut u8,
     original_code: &[u8],
@@ -543,7 +549,14 @@ fn fixup_rip_relative_instructions(
                 let disp_ptr = trampoline.add(offset + disp_offset) as *mut i32;
                 let old_disp = disp_ptr.read_unaligned();
                 let new_disp = old_disp as i64 + delta as i64;
-                disp_ptr.write_unaligned(new_disp as i32);
+                if new_disp >= i32::MIN as i64 && new_disp <= i32::MAX as i64 {
+                    disp_ptr.write_unaligned(new_disp as i32);
+                } else {
+                    // Overflow: NOP out the entire instruction in the trampoline
+                    for i in 0..insn_len {
+                        *trampoline.add(offset + i) = 0x90; // NOP
+                    }
+                }
             }
         }
 
@@ -557,7 +570,14 @@ fn fixup_rip_relative_instructions(
                     let rel_ptr = trampoline.add(offset + rel_offset) as *mut i32;
                     let old_rel = rel_ptr.read_unaligned();
                     let new_rel = old_rel as i64 + delta as i64;
-                    rel_ptr.write_unaligned(new_rel as i32);
+                    if new_rel >= i32::MIN as i64 && new_rel <= i32::MAX as i64 {
+                        rel_ptr.write_unaligned(new_rel as i32);
+                    } else {
+                        // Overflow: NOP out the entire instruction
+                        for i in 0..insn_len {
+                            *trampoline.add(offset + i) = 0x90;
+                        }
+                    }
                 }
             }
             // Check for 0F 8x (Jcc rel32) two-byte opcode
@@ -569,7 +589,13 @@ fn fixup_rip_relative_instructions(
                         let rel_ptr = trampoline.add(offset + rel_offset) as *mut i32;
                         let old_rel = rel_ptr.read_unaligned();
                         let new_rel = old_rel as i64 + delta as i64;
-                        rel_ptr.write_unaligned(new_rel as i32);
+                        if new_rel >= i32::MIN as i64 && new_rel <= i32::MAX as i64 {
+                            rel_ptr.write_unaligned(new_rel as i32);
+                        } else {
+                            for i in 0..insn_len {
+                                *trampoline.add(offset + i) = 0x90;
+                            }
+                        }
                     }
                 }
             }
