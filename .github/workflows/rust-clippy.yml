@@ -45,8 +45,12 @@ jobs:
         run:
           cargo clippy
           --all-features
+          --all-targets
           --message-format=json | clippy-sarif | tee rust-clippy-results.sarif | sarif-fmt
         continue-on-error: true
+
+      - name: Fail on clippy warnings
+        run: cargo clippy --all-features --all-targets -- -D warnings
 
       - name: Upload analysis results to GitHub
         uses: github/codeql-action/upload-sarif@v3

@@ -10,7 +10,7 @@ async fn simple_async_func_u32_add_one(x: u32) -> u32 {
 }
 
 pub fn return_string() -> String {
-    return "Hello, world!".to_string();
+    "Hello, world!".to_string()
 }
 
 fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
@@ -18,7 +18,7 @@ fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
     _b: B,
     _c: C,
 ) -> String {
-    return "Original value".to_string();
+    "Original value".to_string()
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn test_will_execute_when_generic_function_multiple_types_signature_mismatch_sho
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &str, b: bool) -> String,
-            when: a == "abc" && b == true,
+            when: a == "abc" && b,
             returns: "Fake value".to_string(),
             times: 1
         ));
