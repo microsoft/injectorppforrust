@@ -25,3 +25,6 @@ http-body-util = "0.1"
 hyper-tls = "0.6"
 socket2 = "0.5.10"
 reqwest = "0.12.22"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }

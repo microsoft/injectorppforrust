@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use crate::injector_core::common::*;
 use crate::injector_core::internal::*;
 pub use crate::interface::func_ptr::FuncPtr;
@@ -5,42 +6,52 @@ pub use crate::interface::macros::__assert_future_output;
 pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;
+#[cfg(target_arch = "x86_64")]
+use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::Mutex;
-use std::sync::MutexGuard;
 use std::task::Context;
 use std::task::Poll;
 
+#[cfg(not(target_arch = "x86_64"))]
+use std::sync::Mutex;
+#[cfg(not(target_arch = "x86_64"))]
+use std::sync::MutexGuard;
+
+#[cfg(target_arch = "x86_64")]
+use crate::injector_core::thread_local_registry::ThreadRegistration;
+
+/// Normalize a type_name signature by removing anonymous lifetime annotations.
+/// Newer Rust versions (1.86+) render elided lifetimes as `&'_ T` instead of `&T`,
+/// which causes false signature mismatches.
+fn normalize_signature(sig: &str) -> String {
+    sig.replace("&'_ ", "&")
+}
+
 /// A `Mutex` that never stays poisoned: on panic it just recovers the guard.
 ///
-/// This is a trade-off between user experience and potential data corrupt issue.
-/// When panic happens in the multi thread scenario, the std Mutex will cause poison error.
-/// This will fail other unrelated test cases. The test failure accuracy is
-/// more important to users so ignore the poison error.
+/// Only used on non-x86_64 architectures where the global mutex approach is still used.
+#[cfg(not(target_arch = "x86_64"))]
 struct NoPoisonMutex<T> {
     inner: Mutex<T>,
 }
 
+#[cfg(not(target_arch = "x86_64"))]
 impl<T> NoPoisonMutex<T> {
-    /// Create a new mutex.
     const fn new(value: T) -> Self {
         Self {
             inner: Mutex::new(value),
         }
     }
 
-    /// Lock, recovering if the mutex was poisoned.
     fn lock(&self) -> MutexGuard<'_, T> {
         match self.inner.lock() {
             Ok(guard) => guard,
-            Err(poisoned) => {
-                // Swallow the poison and give the guard anyway
-                poisoned.into_inner()
-            }
+            Err(poisoned) => poisoned.into_inner(),
         }
     }
 }
 
+#[cfg(not(target_arch = "x86_64"))]
 static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 
 /// A high-level type that holds patch guards so that when it goes out of scope,
@@ -48,14 +59,21 @@ static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 ///
 /// # Thread Safety
 ///
-/// InjectorPP ensures thread safety by holding a global mutex for the entire lifetime
-/// of the patch. However, users must ensure that no other thread executes the patched
-/// function after the InjectorPP instance is dropped. If multiple threads may execute
-/// the patched function concurrently, ensure that InjectorPP instances remain alive
-/// until all threads have completed execution of the patched function.
+/// On x86_64, InjectorPP uses thread-local dispatch: each thread can independently
+/// fake the same function to different values without interference. Tests using
+/// InjectorPP can run in parallel.
+///
+/// On other architectures, InjectorPP ensures thread safety by holding a global mutex
+/// for the entire lifetime of the patch.
 pub struct InjectorPP {
+    #[cfg(target_arch = "x86_64")]
+    registrations: Vec<ThreadRegistration>,
+    #[cfg(not(target_arch = "x86_64"))]
     guards: Vec<PatchGuard>,
     verifiers: Vec<CallCountVerifier>,
+    #[cfg(target_arch = "x86_64")]
+    _not_send: PhantomData<*const ()>,
+    #[cfg(not(target_arch = "x86_64"))]
     _lock: MutexGuard<'static, ()>,
 }
 
@@ -63,7 +81,9 @@ impl InjectorPP {
     /// Creates a new `InjectorPP` instance.
     ///
     /// `InjectorPP` allows faking Rust functions at runtime without modifying the original code.
-    /// It ensures thread safety by holding a global mutex for the entire lifetime of the patch.
+    ///
+    /// On x86_64, each instance registers thread-local replacements, enabling parallel test execution.
+    /// On other architectures, it holds a global mutex for the entire lifetime of the patch.
     ///
     /// # Example
     ///
@@ -73,20 +93,42 @@ impl InjectorPP {
     /// let injector = InjectorPP::new();
     /// ```
     pub fn new() -> Self {
-        let lock = LOCK_FUNCTION.lock();
+        #[cfg(target_arch = "x86_64")]
+        {
+            Self {
+                registrations: Vec::new(),
+                verifiers: Vec::new(),
+                _not_send: PhantomData,
+            }
+        }
 
-        Self {
-            guards: Vec::new(),
-            verifiers: Vec::new(),
-            _lock: lock,
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let lock = LOCK_FUNCTION.lock();
+            Self {
+                guards: Vec::new(),
+                verifiers: Vec::new(),
+                _lock: lock,
+            }
         }
     }
 
-    /// Prevents injectorpp from other threads to change the functions.
-    /// This is useful when the test does not want to be affected by injectorpp usage in other threads.
+    /// On x86_64 with thread-local dispatch, this is a no-op guard since
+    /// thread isolation is automatic. On other architectures, it holds
+    /// the global mutex to prevent other threads from patching.
     pub fn prevent() -> Preventer {
-        let lock = LOCK_FUNCTION.lock();
-        Preventer { _lock: lock }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let lock = LOCK_FUNCTION.lock();
+            Preventer { _lock: lock }
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            Preventer {
+                _not_send: PhantomData,
+            }
+        }
     }
 
     /// Begins faking a function.
@@ -291,18 +333,19 @@ impl Default for InjectorPP {
 
 /// A guard that prevents injectorpp affecting the test while alive.
 ///
-/// When this guard is held, no any injectorpp instance can be created.
-/// This is useful for threads that need to call functions with their
-/// original behavior.
+/// On x86_64, this is a no-op since thread-local dispatch naturally isolates threads.
+/// On other architectures, this holds the global mutex that prevents patching.
 pub struct Preventer {
+    #[cfg(not(target_arch = "x86_64"))]
     _lock: MutexGuard<'static, ()>,
+    #[cfg(target_arch = "x86_64")]
+    _not_send: PhantomData<*const ()>,
 }
 
 impl Preventer {
     /// Check if patching is currently prevented by this guard.
     ///
-    /// This always returns `true` while the guard exists, as the guard
-    /// holds the global mutex that prevents patching.
+    /// This always returns `true` while the guard exists.
     pub fn is_active(&self) -> bool {
         true
     }
@@ -360,15 +403,24 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
-        if target.signature != self.expected_signature {
+        if normalize_signature(target.signature) != normalize_signature(self.expected_signature) {
             panic!(
                 "Signature mismatch: expected {:?} but got {:?}",
                 self.expected_signature, target.signature
             );
         }
 
-        let guard = self.when.will_execute_guard(target.func_ptr_internal);
-        self.lib.guards.push(guard);
+        #[cfg(target_arch = "x86_64")]
+        {
+            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+            self.lib.registrations.push(reg);
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let guard = self.when.will_execute_guard(target.func_ptr_internal);
+            self.lib.guards.push(guard);
+        }
     }
 
     /// Fake the target function to branch to the provided function.
@@ -425,8 +477,17 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub unsafe fn will_execute_raw_unchecked(self, target: FuncPtr) {
-        let guard = self.when.will_execute_guard(target.func_ptr_internal);
-        self.lib.guards.push(guard);
+        #[cfg(target_arch = "x86_64")]
+        {
+            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+            self.lib.registrations.push(reg);
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let guard = self.when.will_execute_guard(target.func_ptr_internal);
+            self.lib.guards.push(guard);
+        }
     }
 
     /// Fake the target function using a fake function generated by the `fake!` macro.
@@ -498,8 +559,17 @@ impl WhenCalledBuilder<'_> {
             );
         }
 
-        let guard = self.when.will_return_boolean_guard(value);
-        self.lib.guards.push(guard);
+        #[cfg(target_arch = "x86_64")]
+        {
+            let reg = self.when.will_return_boolean_thread_local(value);
+            self.lib.registrations.push(reg);
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let guard = self.when.will_return_boolean_guard(value);
+            self.lib.guards.push(guard);
+        }
     }
 }
 
@@ -535,15 +605,24 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub fn will_return_async(self, target: FuncPtr) {
-        if target.signature != self.expected_signature {
+        if normalize_signature(target.signature) != normalize_signature(self.expected_signature) {
             panic!(
                 "Signature mismatch: expected {:?} but got {:?}",
                 self.expected_signature, target.signature
             );
         }
 
-        let guard = self.when.will_execute_guard(target.func_ptr_internal);
-        self.lib.guards.push(guard);
+        #[cfg(target_arch = "x86_64")]
+        {
+            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+            self.lib.registrations.push(reg);
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let guard = self.when.will_execute_guard(target.func_ptr_internal);
+            self.lib.guards.push(guard);
+        }
     }
 
     /// Fake the target async function to return a specified async value.
@@ -578,7 +657,16 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub unsafe fn will_return_async_unchecked(self, target: FuncPtr) {
-        let guard = self.when.will_execute_guard(target.func_ptr_internal);
-        self.lib.guards.push(guard);
+        #[cfg(target_arch = "x86_64")]
+        {
+            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+            self.lib.registrations.push(reg);
+        }
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            let guard = self.when.will_execute_guard(target.func_ptr_internal);
+            self.lib.guards.push(guard);
+        }
     }
 }
