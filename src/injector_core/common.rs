@@ -77,8 +77,11 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         let max_range: u64 = 0x8000_0000; // ±2GB
+
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        let max_range: u64 = 0x8000000; // ±128MB (must match B instruction range)
 
         #[cfg(target_os = "linux")]
         let max_range: u64 = 0x8000000; // ±128MB

@@ -277,10 +277,14 @@ fn install_dispatcher_x86_64(func_addr: *mut u8, method_key: usize) -> MethodEnt
 
 #[cfg(target_arch = "aarch64")]
 fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEntry {
-    // ARM64 patch size: 12 bytes (3 instructions)
-    const PATCH_SIZE: usize = 12;
+    // ARM64 patch size: 4 bytes (1 instruction).
+    // We MUST use a single instruction to ensure atomic cross-core visibility.
+    // On ARM64, a 4-byte aligned write is atomic. If we used 12 bytes (3 instructions),
+    // another CPU core executing the function could see a mix of old and new instructions
+    // due to non-atomic multi-instruction writes and asynchronous I-cache invalidation.
+    const PATCH_SIZE: usize = 4;
 
-    // Step 1: Create trampoline (copy original 12 bytes + absolute branch back)
+    // Step 1: Create trampoline (copy original 4 bytes + absolute branch back)
     let (trampoline, trampoline_size) = create_trampoline_aarch64(func_addr, PATCH_SIZE);
     let trampoline_addr = trampoline as usize;
 
@@ -288,14 +292,15 @@ fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEn
     let (dispatcher, dispatcher_size) =
         generate_dispatcher_aarch64(method_key, trampoline_addr, func_addr);
 
-    // Step 3: Generate branch patch from original function to dispatcher
+    // Step 3: Generate single B instruction from original function to dispatcher.
+    // allocate_jit_memory guarantees the dispatcher is within ±128MB, so B always reaches.
     let dispatcher_addr = dispatcher as usize;
     let patch = generate_branch_patch_aarch64(func_addr as usize, dispatcher_addr);
 
     // Read original bytes before patching
     let original_bytes = unsafe { read_bytes(func_addr, PATCH_SIZE) };
 
-    // Step 4: Patch the original function
+    // Step 4: Patch the original function with a single atomic 4-byte write
     unsafe {
         patch_function(func_addr, &patch);
     }
@@ -312,29 +317,21 @@ fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEn
     }
 }
 
-/// Generate a 12-byte branch patch for ARM64.
-/// Uses `maybe_emit_long_jump` which handles both:
-/// - Short range (±32MB): B instruction + 2 NOPs
-/// - Long range: ADRP + ADD + BR x16 (±4GB page-relative)
+/// Generate a 4-byte branch patch for ARM64 (single B instruction).
+/// The dispatcher must be allocated within ±128MB so the B instruction can reach it.
 #[cfg(target_arch = "aarch64")]
 fn generate_branch_patch_aarch64(from: usize, to: usize) -> Vec<u8> {
     let instrs: Vec<u32> =
         crate::injector_core::arm64_codegenerator::maybe_emit_long_jump(from, to);
-    let nop: u32 = 0xd503201f;
-
-    let mut code = Vec::with_capacity(12);
-    if instrs.len() == 1 {
-        // Short B instruction + 2 NOPs to fill 12 bytes
-        code.extend_from_slice(&instrs[0].to_le_bytes());
-        code.extend_from_slice(&nop.to_le_bytes());
-        code.extend_from_slice(&nop.to_le_bytes());
-    } else {
-        // ADRP + ADD + BR (3 instructions = 12 bytes)
-        for insn in &instrs {
-            code.extend_from_slice(&insn.to_le_bytes());
-        }
-    }
-    code
+    assert_eq!(
+        instrs.len(),
+        1,
+        "ARM64 dispatcher must be within ±128MB for single B instruction patch. \
+         Got {} instructions for offset {}",
+        instrs.len(),
+        (to as i64).wrapping_sub(from as i64)
+    );
+    instrs[0].to_le_bytes().to_vec()
 }
 
 /// Generate ARM64 dispatcher JIT code.
