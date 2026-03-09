@@ -1,4 +1,8 @@
-#![cfg(not(all(target_os = "windows", target_arch = "aarch64")))]
+// These tests use IP addresses (127.0.0.1) to avoid DNS resolution, which
+// requires x86_64's thread-local dispatch. On ARM32, the removed to_socket_addrs
+// fake causes the test to hang because the TcpSocket::connect fake may not
+// intercept hyper's internal connect call correctly.
+#![cfg(target_arch = "x86_64")]
 use hyper::Uri;
 use injectorpp::interface::injector::*;
 use std::io::{BufRead, BufReader};
