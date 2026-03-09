@@ -105,31 +105,30 @@ impl Drop for ThreadRegistration {
         // Remove this thread's replacement from thread-local storage
         tls_remove(&self.method_key);
 
+        // Free extra JIT block (e.g., return-boolean code) if any.
+        // This is safe because tls_remove above already ensures no dispatcher
+        // will route to this block from the current thread.
+        if let Some((ptr, _size)) = self.extra_jit {
+            unsafe {
+                free_jit_block(ptr, _size);
+            }
+        }
+
         // Decrement ref_count in global registry
         let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = registry.get_mut(&self.method_key) {
             entry.ref_count = entry.ref_count.saturating_sub(1);
             if entry.ref_count == 0 {
-                // Last reference removed — restore original function and clean up.
-                // patch_function already calls inject_asm_code which flushes caches.
+                // Last reference removed — restore original function and clean up
                 unsafe {
                     patch_function(entry.func_ptr, &entry.original_bytes[..entry.patch_size]);
+                    clear_cache_ptr(entry.func_ptr, entry.patch_size);
 
                     free_jit_block(entry.trampoline, entry.trampoline_size);
                     free_jit_block(entry.dispatcher_jit, entry.dispatcher_jit_size);
                 }
 
                 registry.remove(&self.method_key);
-            }
-        }
-        drop(registry);
-
-        // Free extra JIT block (e.g., return-boolean code) AFTER releasing the registry
-        // lock to avoid holding the lock during system calls. This is safe because
-        // tls_remove above already ensures no dispatcher will route to this block.
-        if let Some((ptr, _size)) = self.extra_jit {
-            unsafe {
-                free_jit_block(ptr, _size);
             }
         }
     }
@@ -1455,7 +1454,6 @@ fn modrm_len(code: &[u8]) -> usize {
 // Helper functions
 // ============================================================================
 
-#[allow(dead_code)]
 unsafe fn clear_cache_ptr(ptr: *mut u8, size: usize) {
     #[cfg(target_os = "windows")]
     {
