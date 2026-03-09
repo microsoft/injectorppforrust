@@ -73,6 +73,7 @@ fn tls_remove(key: &usize) {
     });
 }
 
+#[allow(dead_code)] // Fields are stored to keep JIT memory allocations alive
 struct MethodEntry {
     trampoline: *mut u8,
     trampoline_size: usize,
@@ -114,22 +115,26 @@ impl Drop for ThreadRegistration {
             }
         }
 
-        // Decrement ref_count in global registry
+        // Decrement ref_count in global registry.
+        // We intentionally do NOT restore the original function bytes or free the
+        // dispatcher/trampoline when ref_count reaches 0. The dispatcher remains
+        // patched into the function permanently. When no thread has a replacement
+        // registered, the dispatcher routes through the trampoline to the original
+        // function, preserving correct behavior.
+        //
+        // This avoids a race condition on ARM64 (and theoretically x86_64) where
+        // restoring the original bytes and freeing the dispatcher/trampoline can
+        // race with another CPU core still executing inside the dispatcher or
+        // trampoline from a prior call. On ARM64, instruction cache invalidation
+        // is asynchronous across cores, so another core may still be fetching
+        // pre-invalidation instructions when the memory is freed.
+        //
+        // The tradeoff is a small amount of leaked JIT memory (~300 bytes per
+        // unique function ever patched) and a minor overhead for calling unpatched
+        // functions (one TLS lookup per call). Both are negligible for test code.
         let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = registry.get_mut(&self.method_key) {
             entry.ref_count = entry.ref_count.saturating_sub(1);
-            if entry.ref_count == 0 {
-                // Last reference removed — restore original function and clean up
-                unsafe {
-                    patch_function(entry.func_ptr, &entry.original_bytes[..entry.patch_size]);
-                    clear_cache_ptr(entry.func_ptr, entry.patch_size);
-
-                    free_jit_block(entry.trampoline, entry.trampoline_size);
-                    free_jit_block(entry.dispatcher_jit, entry.dispatcher_jit_size);
-                }
-
-                registry.remove(&self.method_key);
-            }
         }
     }
 }
@@ -1454,6 +1459,7 @@ fn modrm_len(code: &[u8]) -> usize {
 // Helper functions
 // ============================================================================
 
+#[allow(dead_code)] // Used by x86_64 trampoline creation; not needed on ARM64
 unsafe fn clear_cache_ptr(ptr: *mut u8, size: usize) {
     #[cfg(target_os = "windows")]
     {
