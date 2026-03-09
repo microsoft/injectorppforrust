@@ -17,7 +17,7 @@ use crate::injector_core::winapi::*;
 #[cfg(target_arch = "aarch64")]
 use crate::injector_core::arm64_codegenerator::*;
 #[cfg(target_arch = "aarch64")]
-use crate::injector_core::utils::u8_to_bits;
+use crate::injector_core::utils::*;
 
 thread_local! {
     static THREAD_REPLACEMENTS: UnsafeCell<HashMap<usize, usize>> = UnsafeCell::new(HashMap::new());
@@ -504,7 +504,7 @@ fn create_trampoline_aarch64(
 
     unsafe {
         let jmp_ptr = trampoline.add(copy_size);
-        let instrs = [
+        let instrs: [u32; 5] = [
             bool_array_to_u32(movz),
             bool_array_to_u32(movk1),
             bool_array_to_u32(movk2),
@@ -759,6 +759,7 @@ fn generate_dispatcher_jit(
 
 /// Windows x64 calling convention dispatcher.
 /// Integer args: rcx, rdx, r8, r9. Float args: xmm0-xmm3.
+#[cfg(target_arch = "x86_64")]
 #[cfg(target_os = "windows")]
 fn generate_dispatcher_windows(
     method_key: usize,
@@ -823,6 +824,7 @@ fn generate_dispatcher_windows(
 
 /// System V AMD64 ABI dispatcher (Linux, macOS).
 /// Integer args: rdi, rsi, rdx, rcx, r8, r9. Float args: xmm0-xmm7.
+#[cfg(target_arch = "x86_64")]
 #[cfg(not(target_os = "windows"))]
 fn generate_dispatcher_sysv(
     method_key: usize,
@@ -1438,6 +1440,11 @@ unsafe fn clear_cache_ptr(ptr: *mut u8, size: usize) {
     #[cfg(target_os = "linux")]
     {
         __clear_cache(ptr, ptr.add(size));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        crate::injector_core::macosapi::sys_icache_invalidate(ptr, size);
     }
 }
 

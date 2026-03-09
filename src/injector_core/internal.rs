@@ -1,8 +1,5 @@
 use crate::injector_core::common::*;
 
-#[cfg(target_arch = "aarch64")]
-use super::patch_arm64::PatchArm64;
-
 #[cfg(target_arch = "arm")]
 use super::patch_arm::PatchArm;
 
@@ -69,7 +66,7 @@ impl WhenCalled {
         #[cfg(target_arch = "aarch64")]
         let (jit_size, asm_code_vec) = {
             use super::arm64_codegenerator::*;
-            use super::utils::u8_to_bits;
+            use super::utils::{bool_array_to_u32, u8_to_bits};
 
             let mut value_bits = [false; 16];
             value_bits[0] = value;
