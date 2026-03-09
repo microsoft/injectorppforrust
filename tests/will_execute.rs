@@ -26,7 +26,7 @@ fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
     _b: B,
     _c: C,
 ) -> String {
-    return "Original value".to_string();
+    "Original value".to_string()
 }
 
 fn single_reference_param_no_return_func(a: &mut i32) {
@@ -41,20 +41,24 @@ fn multiple_reference_params_no_return_func(a: &mut i32, b: &mut bool) {
 fn single_reference_param_func(a: &mut i32) -> bool {
     *a = 1;
 
-    return false;
+    false
 }
 
 fn multiple_reference_params_func(a: &mut i32, b: &mut bool) -> bool {
     *a = 1;
     *b = false;
 
-    return false;
+    false
 }
 
+/// # Safety
+/// Test function — no actual invariants.
 pub unsafe fn unsafe_non_unit(a: i32) -> i32 {
     a * 10
 }
 
+/// # Safety
+/// Test function — caller must pass a valid mutable reference.
 pub unsafe fn unsafe_unit(x: &mut i32) {
     *x += 2;
 }
@@ -96,7 +100,7 @@ fn test_will_execute_when_fake_file_dependency_should_success() {
     let test_path = "/path/that/does/not/exist";
     let result = Path::new(test_path).exists();
 
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -156,14 +160,13 @@ fn test_will_execute_when_fake_no_return_function_over_called_should_panic() {
 
     let message = result.unwrap_err();
     let message_str = message
-        .downcast_ref::<&str>()
-        .map(|s| *s)
+        .downcast_ref::<&str>().copied()
         .or_else(|| message.downcast_ref::<String>().map(|s| s.as_str()))
         .unwrap();
 
     assert_eq!(
         message_str,
-        format!("Fake function defined at tests{MAIN_SEPARATOR}will_execute.rs:143:23 called more times than expected")
+        format!("Fake function defined at tests{MAIN_SEPARATOR}will_execute.rs:147:23 called more times than expected")
     );
 }
 
@@ -237,7 +240,7 @@ fn test_will_execute_when_fake_generic_function_multiple_types_should_success() 
         ))
         .will_execute(injectorpp::fake!(
             func_type: fn(a: &'static str, b: bool, c: i32) -> String,
-            when: a == "abc" && b == true && c == 123,
+            when: a == "abc" && b && c == 123,
             returns: "Fake value".to_string(),
             times: 1
         ));
@@ -268,7 +271,7 @@ fn test_will_execute_when_fake_single_reference_param_function_should_success() 
     let result = single_reference_param_func(&mut value);
 
     assert_eq!(value, 6);
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -310,8 +313,8 @@ fn test_will_execute_when_fake_multiple_reference_param_function_should_success(
     let result = multiple_reference_params_func(&mut value1, &mut value2);
 
     assert_eq!(value1, 6);
-    assert_eq!(value2, true);
-    assert_eq!(result, true);
+    assert!(value2);
+    assert!(result);
 }
 
 #[test]
@@ -333,7 +336,7 @@ fn test_will_execute_when_fake_multiple_reference_param_no_return_function_shoul
     multiple_reference_params_no_return_func(&mut value1, &mut value2);
 
     assert_eq!(value1, 6);
-    assert_eq!(value2, true);
+    assert!(value2);
 }
 
 #[test]

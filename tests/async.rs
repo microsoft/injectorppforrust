@@ -57,7 +57,7 @@ async fn test_simple_async_func_should_success() {
 
     // simple_async_func_bool should not be affected
     let y = simple_async_func_bool(true).await;
-    assert_eq!(y, true);
+    assert!(y);
 
     injector
         .when_called_async(injectorpp::async_func!(
@@ -68,7 +68,7 @@ async fn test_simple_async_func_should_success() {
 
     // Now because it's faked the return value should be false
     let y = simple_async_func_bool(true).await;
-    assert_eq!(y, false);
+    assert!(!y);
 }
 
 #[tokio::test]

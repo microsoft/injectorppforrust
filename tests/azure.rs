@@ -10,13 +10,13 @@ use azure_core::http::{new_http_client, Method, Request, Url};
 async fn test_azure_http_client_always_return_200() {
     // Create a temporary client + request to capture the method pointer
     let temp_client = new_http_client();
-    let mut temp_req = Request::new(Url::parse("https://temp/").unwrap(), Method::Get);
+    let temp_req = Request::new(Url::parse("https://temp/").unwrap(), Method::Get);
 
     // Setup the fake
     let mut injector = InjectorPP::new();
     injector
         .when_called_async(injectorpp::async_func!(
-            temp_client.execute_request(&mut temp_req),
+            temp_client.execute_request(&temp_req),
             std::result::Result<RawResponse, Error>
         ))
         .will_return_async(injectorpp::async_return!(
@@ -28,8 +28,8 @@ async fn test_azure_http_client_always_return_200() {
     // Run the real code under test
     let client = new_http_client();
     let url = Url::parse("https://nonexistsitetest").unwrap();
-    let mut request = Request::new(url, Method::Get);
+    let request = Request::new(url, Method::Get);
 
-    let response = client.execute_request(&mut request).await.unwrap();
+    let response = client.execute_request(&request).await.unwrap();
     assert_eq!(response.status(), 200);
 }

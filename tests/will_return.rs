@@ -1,15 +1,15 @@
 use injectorpp::interface::injector::*;
 
 pub fn returns_false() -> bool {
-    return false;
+    false
 }
 
 pub fn returns_false_in_scope() -> bool {
-    return false;
+    false
 }
 
 fn complex_generic_multiple_types_func_return_false<A, B, C>(_a: A, _b: B, _c: C) -> bool {
-    return false;
+    false
 }
 
 fn call_with_another_life_time<'a>(s: &'a str) -> bool {
@@ -22,7 +22,7 @@ fn call_with_another_life_time<'a>(s: &'a str) -> bool {
 
 #[test]
 fn test_will_return_boolean_when_in_scope_should_restore() {
-    assert_eq!(returns_false_in_scope(), false);
+    assert!(!returns_false_in_scope());
 
     {
         let mut injector = InjectorPP::new();
@@ -31,12 +31,12 @@ fn test_will_return_boolean_when_in_scope_should_restore() {
             .will_return_boolean(true);
 
         let result = returns_false_in_scope();
-        assert_eq!(result, true);
+        assert!(result);
     }
 
     let restored = returns_false_in_scope();
 
-    assert_eq!(restored, false);
+    assert!(!restored);
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn test_will_return_boolean_when_fake_return_true_should_success() {
 
     let result = returns_false();
 
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -60,7 +60,7 @@ fn test_will_return_boolean_when_fake_return_false_should_success() {
 
     let result = returns_false();
 
-    assert_eq!(result, false);
+    assert!(!result);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn test_will_return_boolean_when_fake_complex_generic_function_multiple_types_sh
 
     let result = complex_generic_multiple_types_func_return_false(1, false, "test string");
 
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -90,5 +90,5 @@ fn test_will_return_boolean_when_fake_complex_generic_function_multiple_types_an
     let my_str = String::from("hello");
     let result = call_with_another_life_time(&my_str);
 
-    assert_eq!(result, true);
+    assert!(result);
 }

@@ -32,7 +32,7 @@ fn complex_generic_multiple_types_func<A: Display, B: Display, C: Display>(
     _b: B,
     _c: C,
 ) -> String {
-    return "Original value".to_string();
+    "Original value".to_string()
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn test_will_execute_raw_when_fake_file_dependency_should_success() {
     let test_path = "/path/that/does/not/exist";
     let result = Path::new(test_path).exists();
 
-    assert_eq!(result, true);
+    assert!(result);
 }
 
 #[test]
@@ -144,13 +144,13 @@ fn test_will_execute_raw_when_fake_generic_function_multiple_types_with_differen
     static CALL_COUNT_CONDITION_THREE_CLOSURE: AtomicU32 = AtomicU32::new(0);
 
     let fake_closure = |a: &str, b: bool, c: i32| -> String {
-        if b == true && c > 1 {
+        if b && c > 1 {
             CALL_COUNT_CONDITION_ONE_CLOSURE.fetch_add(1, Ordering::SeqCst);
 
             return "Called with condition 1".to_string();
         }
 
-        if a == "cond2" && b == false {
+        if a == "cond2" && !b {
             CALL_COUNT_CONDITION_TWO_CLOSURE.fetch_add(1, Ordering::SeqCst);
 
             return "Called with condition 2".to_string();
