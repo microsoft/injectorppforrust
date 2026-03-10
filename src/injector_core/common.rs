@@ -75,13 +75,16 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
     #[cfg(target_os = "linux")]
     let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
     {
         #[cfg(target_os = "macos")]
         let max_range: u64 = 0x8000_0000; // ±2GB
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))]
         let max_range: u64 = 0x8000000; // ±128MB
+
+        #[cfg(all(target_os = "linux", target_arch = "arm"))]
+        let max_range: u64 = 0x1000000; // ±16MB
 
         let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
@@ -132,7 +135,7 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         );
     }
 
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "arm")))]
     {
         let ptr = unsafe {
             libc::mmap(

@@ -757,9 +757,6 @@ fn emit_mov_reg(code: &mut Vec<u8>, rd: u8, rn: u8) {
 
 #[cfg(target_arch = "arm")]
 fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntry {
-    // ARM32 always patches 12 bytes (same as existing patch_arm.rs)
-    const PATCH_SIZE: usize = 12;
-
     // Detect if function is Thumb mode (LSB of original address was set)
     let is_thumb = (func_addr as usize) & 1 != 0;
     // Clear the Thumb bit for actual memory operations
@@ -769,29 +766,54 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
         unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(func_addr_clean as *mut ()).unwrap()) };
 
     // Step 1: Pre-allocate dispatcher buffer to determine its address.
-    let dispatcher_max_size = 64; // enough for dispatcher + literal pool
+    // 64 bytes fits an optional 12-byte Thumb stub + 52-byte ARM dispatcher.
+    let dispatcher_max_size = 64;
     let dispatcher = allocate_jit_memory(&near_src, dispatcher_max_size);
-    let dispatcher_addr = dispatcher as usize; // No Thumb bit — dispatcher is ARM mode
+    let dispatcher_addr = dispatcher as usize;
 
-    // Step 2: Create trampoline
+    // Step 2: Determine patch size based on distance to dispatcher.
+    // B.W (Thumb) has ±16MB range, B (ARM) has ±32MB range.
+    let distance = dispatcher_addr.abs_diff(func_addr_clean as usize);
+    let max_b_range = if is_thumb { 16 * 1024 * 1024 } else { 32 * 1024 * 1024 };
+    let patch_size = if distance < max_b_range { 4 } else { 12 };
+
+    // Step 3: Create trampoline (copies patch_size bytes of original code)
     let (trampoline, trampoline_size) =
-        create_trampoline_arm32(func_addr_clean, PATCH_SIZE, is_thumb);
+        create_trampoline_arm32(func_addr_clean, patch_size, is_thumb);
     let trampoline_addr = trampoline as usize | (if is_thumb { 1 } else { 0 });
 
-    // Step 3: Regenerate dispatcher with real trampoline address and write
-    let dispatcher_code = build_dispatcher_code_arm32(method_key as u32, trampoline_addr as u32);
-    assert!(dispatcher_code.len() <= dispatcher_max_size);
-    unsafe {
-        inject_asm_code(&dispatcher_code, dispatcher);
+    // Step 4: Build and write dispatcher code.
+    // For Thumb functions with a 4-byte patch, a Thumb-mode stub at the start
+    // of the JIT buffer transitions to the ARM-mode dispatcher, because Thumb
+    // B.W cannot switch processor mode.
+    let arm_dispatcher_code = build_dispatcher_code_arm32(method_key as u32, trampoline_addr as u32);
+
+    if is_thumb && patch_size == 4 {
+        let arm_code_addr = (dispatcher_addr + 12) as u32;
+        let stub = build_thumb_to_arm_stub(arm_code_addr);
+        let total_size = stub.len() + arm_dispatcher_code.len();
+        assert!(total_size <= dispatcher_max_size);
+
+        let mut full_code = Vec::with_capacity(total_size);
+        full_code.extend_from_slice(&stub);
+        full_code.extend_from_slice(&arm_dispatcher_code);
+        unsafe { inject_asm_code(&full_code, dispatcher); }
+    } else {
+        assert!(arm_dispatcher_code.len() <= dispatcher_max_size);
+        unsafe { inject_asm_code(&arm_dispatcher_code, dispatcher); }
     }
 
-    // Step 4: Generate branch patch (12 bytes, same format as patch_arm.rs)
-    let patch = generate_branch_patch_arm32(dispatcher_addr, is_thumb);
+    // Step 5: Generate branch patch.
+    // 4-byte Thumb B.W → Thumb stub at offset 0; 4-byte ARM B → dispatcher at offset 0.
+    // 12-byte patches encode the dispatcher address directly.
+    let patch = generate_branch_patch_arm32(
+        func_addr_clean as usize, dispatcher_addr, is_thumb, patch_size,
+    );
 
     // Read original bytes before patching
-    let original_bytes = unsafe { read_bytes(func_addr_clean, PATCH_SIZE) };
+    let original_bytes = unsafe { read_bytes(func_addr_clean, patch_size) };
 
-    // Step 5: Patch the function
+    // Step 6: Patch the function
     unsafe {
         patch_function(func_addr_clean, &patch);
     }
@@ -803,7 +825,7 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
         dispatcher_jit_size: dispatcher_max_size,
         original_bytes,
         func_ptr: func_addr_clean,
-        patch_size: PATCH_SIZE,
+        patch_size,
         ref_count: 0,
     }
 }
@@ -843,6 +865,29 @@ fn build_dispatcher_code_arm32(method_key: u32, trampoline_addr: u32) -> Vec<u8>
         code.extend_from_slice(&insn.to_le_bytes());
     }
     code
+}
+
+/// Build a 12-byte Thumb-mode stub that transitions to an ARM-mode dispatcher.
+///
+/// Layout: LDR.W r12, [pc, #4]; BX r12; NOP; .word arm_addr
+/// The stub executes in Thumb mode and uses BX to switch to ARM mode.
+#[cfg(target_arch = "arm")]
+fn build_thumb_to_arm_stub(arm_dispatcher_addr: u32) -> Vec<u8> {
+    let mut stub = vec![0u8; 12];
+    // LDR.W r12, [pc, #4]: F8DF C004
+    stub[0] = 0xDF;
+    stub[1] = 0xF8;
+    stub[2] = 0x04;
+    stub[3] = 0xC0;
+    // BX r12: 4760
+    stub[4] = 0x60;
+    stub[5] = 0x47;
+    // NOP: BF00
+    stub[6] = 0x00;
+    stub[7] = 0xBF;
+    // .word arm_dispatcher_addr (no Thumb bit — triggers ARM mode switch)
+    stub[8..12].copy_from_slice(&arm_dispatcher_addr.to_le_bytes());
+    stub
 }
 
 /// Create a trampoline for ARM32: copy original instructions + jump back to original.
@@ -985,53 +1030,85 @@ fn fixup_arm32_pc_relative(
     }
 }
 
-/// Generate the 12-byte branch patch for ARM32.
-/// Uses r12 (IP, intra-procedure scratch) to avoid clobbering callee-saved registers.
+/// Generate the branch patch for ARM32 (4-byte or 12-byte).
+///
+/// 4-byte patches use a direct branch instruction (Thumb B.W or ARM B).
+/// 12-byte patches use register-indirect branches (MOVW/MOVT/BX or LDR/BX/.word).
 #[cfg(target_arch = "arm")]
-fn generate_branch_patch_arm32(dispatcher_addr: usize, is_thumb: bool) -> Vec<u8> {
-    let mut patch = [0u8; 12];
-    let addr = dispatcher_addr as u32;
+fn generate_branch_patch_arm32(
+    src_addr: usize,
+    target_addr: usize,
+    is_thumb: bool,
+    patch_size: usize,
+) -> Vec<u8> {
+    if patch_size == 4 {
+        if is_thumb {
+            // Thumb B.W (T4 encoding, unconditional): ±16MB range
+            let offset = (target_addr as i32) - (src_addr as i32 + 4);
+            let imm = offset >> 1;
+            let s = ((imm >> 23) & 1) as u16;
+            let imm10 = ((imm >> 11) & 0x3FF) as u16;
+            let imm11 = (imm & 0x7FF) as u16;
+            let i1 = ((imm >> 22) & 1) as u16;
+            let i2 = ((imm >> 21) & 1) as u16;
+            let j1 = (!(i1 ^ s)) & 1;
+            let j2 = (!(i2 ^ s)) & 1;
 
-    if is_thumb {
-        // Thumb mode: MOVW r12, #low16; MOVT r12, #high16; BX r12; NOP
-        // This is alignment-independent and doesn't clobber callee-saved registers.
-        let low16 = (addr & 0xFFFF) as u16;
-        let high16 = ((addr >> 16) & 0xFFFF) as u16;
+            let hw1: u16 = 0xF000 | (s << 10) | imm10;
+            let hw2: u16 = 0x9000 | (j1 << 13) | (j2 << 11) | imm11;
 
-        // MOVW r12, #low16 (Thumb-2 T3 encoding, 4 bytes)
-        let imm4 = ((low16 >> 12) & 0xF) as u16;
-        let i = ((low16 >> 11) & 1) as u16;
-        let imm3 = ((low16 >> 8) & 0x7) as u16;
-        let imm8 = (low16 & 0xFF) as u16;
-        let hw1: u16 = 0xF240 | (i << 10) | imm4;
-        let hw2: u16 = (imm3 << 12) | (12 << 8) | imm8;
-        patch[0..2].copy_from_slice(&hw1.to_le_bytes());
-        patch[2..4].copy_from_slice(&hw2.to_le_bytes());
-
-        // MOVT r12, #high16 (Thumb-2 T1 encoding, 4 bytes)
-        let imm4 = ((high16 >> 12) & 0xF) as u16;
-        let i = ((high16 >> 11) & 1) as u16;
-        let imm3 = ((high16 >> 8) & 0x7) as u16;
-        let imm8 = (high16 & 0xFF) as u16;
-        let hw1: u16 = 0xF2C0 | (i << 10) | imm4;
-        let hw2: u16 = (imm3 << 12) | (12 << 8) | imm8;
-        patch[4..6].copy_from_slice(&hw1.to_le_bytes());
-        patch[6..8].copy_from_slice(&hw2.to_le_bytes());
-
-        // BX r12 (0x4760) + NOP (0xBF00)
-        patch[8] = 0x60;
-        patch[9] = 0x47;
-        patch[10] = 0x00;
-        patch[11] = 0xBF;
+            let mut patch = vec![0u8; 4];
+            patch[0..2].copy_from_slice(&hw1.to_le_bytes());
+            patch[2..4].copy_from_slice(&hw2.to_le_bytes());
+            patch
+        } else {
+            // ARM B (unconditional): ±32MB range
+            let offset = (target_addr as i32) - (src_addr as i32 + 8);
+            let imm24 = ((offset >> 2) as u32) & 0x00FFFFFF;
+            let insn: u32 = 0xEA000000 | imm24;
+            insn.to_le_bytes().to_vec()
+        }
     } else {
-        // ARM mode: LDR r12, [pc, #-0]; BX r12; .word dispatcher_addr
-        // r12 (IP) is the intra-procedure scratch register, safe to clobber.
-        patch[0..4].copy_from_slice(&0xE51FC000u32.to_le_bytes());
-        patch[4..8].copy_from_slice(&0xE12FFF1Cu32.to_le_bytes());
-        patch[8..12].copy_from_slice(&addr.to_le_bytes());
-    }
+        // 12-byte fallback patch
+        let mut patch = [0u8; 12];
+        let addr = target_addr as u32;
 
-    patch.to_vec()
+        if is_thumb {
+            // MOVW r12, #low16; MOVT r12, #high16; BX r12; NOP
+            let low16 = (addr & 0xFFFF) as u16;
+            let high16 = ((addr >> 16) & 0xFFFF) as u16;
+
+            let imm4 = ((low16 >> 12) & 0xF) as u16;
+            let i = ((low16 >> 11) & 1) as u16;
+            let imm3 = ((low16 >> 8) & 0x7) as u16;
+            let imm8 = (low16 & 0xFF) as u16;
+            let hw1: u16 = 0xF240 | (i << 10) | imm4;
+            let hw2: u16 = (imm3 << 12) | (12 << 8) | imm8;
+            patch[0..2].copy_from_slice(&hw1.to_le_bytes());
+            patch[2..4].copy_from_slice(&hw2.to_le_bytes());
+
+            let imm4 = ((high16 >> 12) & 0xF) as u16;
+            let i = ((high16 >> 11) & 1) as u16;
+            let imm3 = ((high16 >> 8) & 0x7) as u16;
+            let imm8 = (high16 & 0xFF) as u16;
+            let hw1: u16 = 0xF2C0 | (i << 10) | imm4;
+            let hw2: u16 = (imm3 << 12) | (12 << 8) | imm8;
+            patch[4..6].copy_from_slice(&hw1.to_le_bytes());
+            patch[6..8].copy_from_slice(&hw2.to_le_bytes());
+
+            patch[8] = 0x60;
+            patch[9] = 0x47;
+            patch[10] = 0x00;
+            patch[11] = 0xBF;
+        } else {
+            // ARM: LDR r12, [pc, #-0]; BX r12; .word dispatcher_addr
+            patch[0..4].copy_from_slice(&0xE51FC000u32.to_le_bytes());
+            patch[4..8].copy_from_slice(&0xE12FFF1Cu32.to_le_bytes());
+            patch[8..12].copy_from_slice(&addr.to_le_bytes());
+        }
+
+        patch.to_vec()
+    }
 }
 
 // ============================================================================
