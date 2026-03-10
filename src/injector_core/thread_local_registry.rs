@@ -277,30 +277,67 @@ fn install_dispatcher_x86_64(func_addr: *mut u8, method_key: usize) -> MethodEnt
 
 #[cfg(target_arch = "aarch64")]
 fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEntry {
-    // ARM64 patch size: 4 bytes (1 instruction).
-    // We MUST use a single instruction to ensure atomic cross-core visibility.
-    // On ARM64, a 4-byte aligned write is atomic. If we used 12 bytes (3 instructions),
-    // another CPU core executing the function could see a mix of old and new instructions
-    // due to non-atomic multi-instruction writes and asynchronous I-cache invalidation.
-    const PATCH_SIZE: usize = 4;
+    // ARM64 uses a dynamic patch size based on the distance between the function
+    // and its dispatcher:
+    //
+    // - If within ±128MB: 4-byte patch (single B instruction).
+    //   A 4-byte aligned write is atomic on ARM64, ensuring cross-core visibility.
+    //   Another core sees either the old instruction or the new B, never a partial mix.
+    //
+    // - If beyond ±128MB: 12-byte patch (ADRP + ADD + BR x16).
+    //   This is needed for system library functions (e.g. getenv, memset) on macOS
+    //   where the shared cache addresses can be far from allocatable JIT memory.
+    //   The 12-byte write is NOT atomic across cores, but the initial patching happens
+    //   under the REGISTRY lock (only one thread patches each function). Once installed,
+    //   the dispatcher is safe for concurrent execution.
 
-    // Step 1: Create trampoline (copy original 4 bytes + absolute branch back)
-    let (trampoline, trampoline_size) = create_trampoline_aarch64(func_addr, PATCH_SIZE);
+    let near_src =
+        unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(func_addr as *mut ()).unwrap()) };
+
+    // Step 1: Pre-allocate dispatcher buffer to determine its address.
+    // We allocate with the maximum possible code size so the address is stable.
+    const DISPATCHER_MAX_SIZE: usize = 256;
+    let dispatcher = allocate_jit_memory(&near_src, DISPATCHER_MAX_SIZE);
+    let dispatcher_addr = dispatcher as usize;
+
+    // Step 2: Determine patch size based on actual distance to dispatcher.
+    // If within ±128MB, B instruction (4 bytes) reaches; otherwise ADRP+ADD+BR (12 bytes).
+    let branch_instrs = crate::injector_core::arm64_codegenerator::maybe_emit_long_jump(
+        func_addr as usize,
+        dispatcher_addr,
+    );
+    let patch_size = branch_instrs.len() * 4;
+
+    // Step 3: Create trampoline with the correct copy_size (must match patch_size)
+    let (trampoline, trampoline_size) = create_trampoline_aarch64(func_addr, patch_size);
     let trampoline_addr = trampoline as usize;
 
-    // Step 2: Generate dispatcher JIT code
-    let (dispatcher, dispatcher_size) =
-        generate_dispatcher_aarch64(method_key, trampoline_addr, func_addr);
+    // Step 4: Generate dispatcher code with the real trampoline address and write
+    // to the pre-allocated buffer.
+    let dispatcher_code =
+        build_dispatcher_code_aarch64(method_key as u64, trampoline_addr as u64);
+    assert!(
+        dispatcher_code.len() <= DISPATCHER_MAX_SIZE,
+        "Dispatcher code ({} bytes) exceeds pre-allocated buffer ({} bytes)",
+        dispatcher_code.len(),
+        DISPATCHER_MAX_SIZE
+    );
+    unsafe {
+        inject_asm_code(&dispatcher_code, dispatcher);
+    }
 
-    // Step 3: Generate single B instruction from original function to dispatcher.
-    // allocate_jit_memory guarantees the dispatcher is within ±128MB, so B always reaches.
-    let dispatcher_addr = dispatcher as usize;
+    // Step 5: Generate branch patch
     let patch = generate_branch_patch_aarch64(func_addr as usize, dispatcher_addr);
+    assert_eq!(
+        patch.len(),
+        patch_size,
+        "Branch patch size changed unexpectedly"
+    );
 
     // Read original bytes before patching
-    let original_bytes = unsafe { read_bytes(func_addr, PATCH_SIZE) };
+    let original_bytes = unsafe { read_bytes(func_addr, patch_size) };
 
-    // Step 4: Patch the original function with a single atomic 4-byte write
+    // Step 6: Patch the original function
     unsafe {
         patch_function(func_addr, &patch);
     }
@@ -309,47 +346,31 @@ fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEn
         trampoline,
         trampoline_size,
         dispatcher_jit: dispatcher,
-        dispatcher_jit_size: dispatcher_size,
+        dispatcher_jit_size: DISPATCHER_MAX_SIZE,
         original_bytes,
         func_ptr: func_addr,
-        patch_size: PATCH_SIZE,
+        patch_size,
         ref_count: 0,
     }
 }
 
-/// Generate a 4-byte branch patch for ARM64 (single B instruction).
-/// The dispatcher must be allocated within ±128MB so the B instruction can reach it.
+/// Generate branch patch bytes for ARM64.
+/// Returns 4 bytes (single B) if within ±128MB, or 12 bytes (ADRP+ADD+BR) otherwise.
 #[cfg(target_arch = "aarch64")]
 fn generate_branch_patch_aarch64(from: usize, to: usize) -> Vec<u8> {
     let instrs: Vec<u32> =
         crate::injector_core::arm64_codegenerator::maybe_emit_long_jump(from, to);
-    assert_eq!(
-        instrs.len(),
-        1,
-        "ARM64 dispatcher must be within ±128MB for single B instruction patch. \
-         Got {} instructions for offset {}",
-        instrs.len(),
-        (to as i64).wrapping_sub(from as i64)
-    );
-    instrs[0].to_le_bytes().to_vec()
+    let mut bytes = Vec::with_capacity(instrs.len() * 4);
+    for insn in &instrs {
+        bytes.extend_from_slice(&insn.to_le_bytes());
+    }
+    bytes
 }
 
-/// Generate ARM64 dispatcher JIT code.
-///
-/// The dispatcher:
-/// 1. Saves all argument registers (x0-x7, q0-q7)
-/// 2. Calls `get_thread_target(method_key, trampoline_addr)`
-/// 3. Restores all argument registers
-/// 4. Branches to the returned target
+/// Build the ARM64 dispatcher code bytes without allocating JIT memory.
 #[cfg(target_arch = "aarch64")]
-fn generate_dispatcher_aarch64(
-    method_key: usize,
-    trampoline_addr: usize,
-    near_addr: *mut u8,
-) -> (*mut u8, usize) {
+fn build_dispatcher_code_aarch64(method_key_val: u64, trampoline_val: u64) -> Vec<u8> {
     let fn_addr = get_thread_target as *const () as u64;
-    let method_key_val = method_key as u64;
-    let trampoline_val = trampoline_addr as u64;
 
     let mut code: Vec<u8> = Vec::with_capacity(256);
 
@@ -417,16 +438,7 @@ fn generate_dispatcher_aarch64(
     let br = emit_br(u8_to_bits::<5>(9));
     code.extend_from_slice(&bool_array_to_u32(br).to_le_bytes());
 
-    let near_src =
-        unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(near_addr as *mut ()).unwrap()) };
-    let jit_size = code.len();
-    let jit_mem = allocate_jit_memory(&near_src, jit_size);
-
-    unsafe {
-        inject_asm_code(&code, jit_mem);
-    }
-
-    (jit_mem, jit_size)
+    code
 }
 
 /// Create a trampoline for ARM64: copy original instructions + absolute branch back.

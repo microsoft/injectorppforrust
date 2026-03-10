@@ -77,40 +77,53 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        #[cfg(target_os = "macos")]
         let max_range: u64 = 0x8000_0000; // ±2GB
-
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        let max_range: u64 = 0x8000000; // ±128MB (must match B instruction range)
 
         #[cfg(target_os = "linux")]
         let max_range: u64 = 0x8000000; // ±128MB
 
         let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
-        let mut start_address = original_addr.saturating_sub(max_range);
 
-        while start_address <= original_addr + max_range {
-            let ptr = unsafe {
-                libc::mmap(
-                    start_address as *mut c_void,
-                    code_size,
-                    PROT_READ | PROT_WRITE | PROT_EXEC,
-                    flags,
-                    -1,
-                    0,
-                )
-            };
-            if ptr != libc::MAP_FAILED {
-                let allocated = ptr as u64;
-                let diff = allocated.abs_diff(original_addr);
-                if diff <= max_range {
-                    return ptr as *mut u8;
+        // Search outward from the function address to find the CLOSEST free page.
+        // This minimizes the trampoline-to-function distance, which is critical for
+        // PC-relative instruction fixups (CBZ/CBNZ have only ±1MB range).
+        let mut offset: u64 = 0;
+        while offset <= max_range {
+            // Try addresses at +offset and -offset from the function
+            for &dir in &[1i64, -1i64] {
+                let hint = if dir > 0 {
+                    original_addr.checked_add(offset)
+                } else if offset > 0 {
+                    original_addr.checked_sub(offset)
                 } else {
-                    unsafe { libc::munmap(ptr, code_size) };
+                    continue; // Already tried offset=0 with dir=1
+                };
+
+                let Some(hint_addr) = hint else { continue };
+
+                let ptr = unsafe {
+                    libc::mmap(
+                        hint_addr as *mut c_void,
+                        code_size,
+                        PROT_READ | PROT_WRITE | PROT_EXEC,
+                        flags,
+                        -1,
+                        0,
+                    )
+                };
+                if ptr != libc::MAP_FAILED {
+                    let allocated = ptr as u64;
+                    let diff = allocated.abs_diff(original_addr);
+                    if diff <= max_range {
+                        return ptr as *mut u8;
+                    } else {
+                        unsafe { libc::munmap(ptr, code_size) };
+                    }
                 }
             }
-            start_address += page_size;
+            offset += page_size;
         }
 
         panic!(
@@ -154,29 +167,42 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
         let max_range: u64 = 0x8000000; // ±128MB
         let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { get_page_size() as u64 };
-        let mut start_address = original_addr.saturating_sub(max_range);
 
-        while start_address <= original_addr + max_range {
-            let ptr = unsafe {
-                VirtualAlloc(
-                    start_address as *mut c_void,
-                    code_size,
-                    MEM_COMMIT | MEM_RESERVE,
-                    PAGE_EXECUTE_READWRITE,
-                )
-            };
-            if !ptr.is_null() {
-                let allocated = ptr as u64;
-                let diff = allocated.abs_diff(original_addr);
-                if diff <= max_range {
-                    return ptr as *mut u8;
+        // Search outward from the function address to find the CLOSEST free page.
+        let mut offset: u64 = 0;
+        while offset <= max_range {
+            for &dir in &[1i64, -1i64] {
+                let hint = if dir > 0 {
+                    original_addr.checked_add(offset)
+                } else if offset > 0 {
+                    original_addr.checked_sub(offset)
                 } else {
-                    unsafe {
-                        VirtualFree(ptr, 0, MEM_RELEASE);
+                    continue;
+                };
+
+                let Some(hint_addr) = hint else { continue };
+
+                let ptr = unsafe {
+                    VirtualAlloc(
+                        hint_addr as *mut c_void,
+                        code_size,
+                        MEM_COMMIT | MEM_RESERVE,
+                        PAGE_EXECUTE_READWRITE,
+                    )
+                };
+                if !ptr.is_null() {
+                    let allocated = ptr as u64;
+                    let diff = allocated.abs_diff(original_addr);
+                    if diff <= max_range {
+                        return ptr as *mut u8;
+                    } else {
+                        unsafe {
+                            VirtualFree(ptr, 0, MEM_RELEASE);
+                        }
                     }
                 }
             }
-            start_address += page_size;
+            offset += page_size;
         }
 
         panic!("Failed to allocate executable memory within ±128MB of original function address on AArch64 Windows");
