@@ -224,11 +224,15 @@ fn test_sequential_faking_same_thread() {
 // Stress tests
 // ============================================================================
 
-/// Stress test: 20 threads all fake the same function and verify concurrent access
+/// Stress test: multiple threads all fake the same function and verify concurrent access
 /// doesn't corrupt anything. Each thread uses a fixed return value (42) and
 /// calls the function 100 times.
 #[test]
 fn test_many_threads_concurrent_stress() {
+    // ARM32 runs in 32-bit compat on ARM64 CI runners with limited resources
+    #[cfg(target_arch = "arm")]
+    const THREAD_COUNT: usize = 4;
+    #[cfg(not(target_arch = "arm"))]
     const THREAD_COUNT: usize = 20;
     let error_count = Arc::new(AtomicUsize::new(0));
     let barrier = Arc::new(Barrier::new(THREAD_COUNT));
