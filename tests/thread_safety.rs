@@ -1,7 +1,7 @@
 // Thread-local dispatch is available on x86_64 and aarch64. On other architectures,
 // InjectorPP uses a global mutex which deadlocks with the barrier-based
 // synchronization these tests rely on.
-#![cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#![cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};
@@ -16,27 +16,27 @@ use injectorpp::interface::injector::*;
 
 #[inline(never)]
 fn get_value() -> i32 {
-    -1
+    std::hint::black_box(-1)
 }
 
 #[inline(never)]
 fn get_other_value() -> i32 {
-    -2
+    std::hint::black_box(-2)
 }
 
 #[inline(never)]
 fn is_enabled() -> bool {
-    false
+    std::hint::black_box(false)
 }
 
 #[inline(never)]
 fn add(a: i32, b: i32) -> i32 {
-    a + b
+    std::hint::black_box(a + b)
 }
 
 #[inline(never)]
 fn do_work() {
-    // no-op by default
+    let _ = std::hint::black_box(42u32);
 }
 
 // ============================================================================
@@ -224,11 +224,15 @@ fn test_sequential_faking_same_thread() {
 // Stress tests
 // ============================================================================
 
-/// Stress test: 20 threads all fake the same function and verify concurrent access
+/// Stress test: multiple threads all fake the same function and verify concurrent access
 /// doesn't corrupt anything. Each thread uses a fixed return value (42) and
 /// calls the function 100 times.
 #[test]
 fn test_many_threads_concurrent_stress() {
+    // ARM32 runs in 32-bit compat on ARM64 CI runners with limited resources
+    #[cfg(target_arch = "arm")]
+    const THREAD_COUNT: usize = 4;
+    #[cfg(not(target_arch = "arm"))]
     const THREAD_COUNT: usize = 20;
     let error_count = Arc::new(AtomicUsize::new(0));
     let barrier = Arc::new(Barrier::new(THREAD_COUNT));
@@ -455,6 +459,9 @@ fn test_bool_two_threads_opposite_values() {
 /// Two threads use will_execute_raw with different closures for the same function.
 #[test]
 fn test_will_execute_raw_closure_per_thread() {
+    let pre_val = get_value();
+    assert_eq!(pre_val, -1);
+
     let result1 = Arc::new(AtomicI32::new(0));
     let result2 = Arc::new(AtomicI32::new(0));
     let barrier = Arc::new(Barrier::new(2));
@@ -467,7 +474,8 @@ fn test_will_execute_raw_closure_per_thread() {
             .when_called(injectorpp::func!(fn(get_value)() -> i32))
             .will_execute_raw(injectorpp::closure!(|| { 42 }, fn() -> i32));
         b1.wait();
-        r1.store(get_value(), Ordering::SeqCst);
+        let val = get_value();
+        r1.store(val, Ordering::SeqCst);
         b1.wait();
     });
 
@@ -479,7 +487,8 @@ fn test_will_execute_raw_closure_per_thread() {
             .when_called(injectorpp::func!(fn(get_value)() -> i32))
             .will_execute_raw(injectorpp::closure!(|| { 84 }, fn() -> i32));
         b2.wait();
-        r2.store(get_value(), Ordering::SeqCst);
+        let val = get_value();
+        r2.store(val, Ordering::SeqCst);
         b2.wait();
     });
 

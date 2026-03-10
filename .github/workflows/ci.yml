@@ -97,8 +97,9 @@ jobs:
           OPENSSL_INCLUDE_DIR: /usr/include/openssl
           PKG_CONFIG_ALLOW_CROSS: 1
           PKG_CONFIG_PATH: /usr/lib/arm-linux-gnueabihf/pkgconfig
+          RUST_BACKTRACE: full
         run: |
-          cargo test --target ${{ matrix.target }} --tests -- --nocapture
+          cargo test -j 1 --target ${{ matrix.target }} --tests -- --nocapture --test-threads=1
 
       - name: Test (other targets)
         if: matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'thumbv7neon-unknown-linux-gnueabihf'

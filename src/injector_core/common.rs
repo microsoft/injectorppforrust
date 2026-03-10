@@ -42,7 +42,7 @@ impl FuncPtrInternal {
 /// Allocates a block of executable memory near the provided source address,
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "arm"))]
 pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
@@ -67,7 +67,7 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
 /// Panics if memory allocation fails or if no memory is found within the valid address range on
 /// `aarch64` or `x86_64`.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "arm"))]
 fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(target_os = "macos")]
     let flags = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_JIT;
@@ -75,13 +75,16 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
     #[cfg(target_os = "linux")]
     let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
     {
         #[cfg(target_os = "macos")]
         let max_range: u64 = 0x8000_0000; // ±2GB
 
-        #[cfg(target_os = "linux")]
+        #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))]
         let max_range: u64 = 0x8000000; // ±128MB
+
+        #[cfg(all(target_os = "linux", target_arch = "arm"))]
+        let max_range: u64 = 0x1000000; // ±16MB
 
         let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { sysconf(_SC_PAGESIZE) as u64 };
@@ -132,7 +135,7 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         );
     }
 
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "arm")))]
     {
         let ptr = unsafe {
             libc::mmap(
