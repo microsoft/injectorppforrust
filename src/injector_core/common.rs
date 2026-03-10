@@ -42,7 +42,7 @@ impl FuncPtrInternal {
 /// Allocates a block of executable memory near the provided source address,
 /// ensuring that the allocated memory lies within ±128MB of the source.
 /// This mirrors the C++ approach.
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "arm"))]
 pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
@@ -67,7 +67,7 @@ pub(crate) fn allocate_jit_memory(src: &FuncPtrInternal, code_size: usize) -> *m
 /// Panics if memory allocation fails or if no memory is found within the valid address range on
 /// `aarch64` or `x86_64`.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64", target_arch = "arm"))]
 fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
     #[cfg(target_os = "macos")]
     let flags = libc::MAP_ANON | libc::MAP_PRIVATE | libc::MAP_JIT;

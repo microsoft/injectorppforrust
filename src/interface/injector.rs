@@ -6,18 +6,18 @@ pub use crate::interface::macros::__assert_future_output;
 pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 use std::sync::Mutex;
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 use std::sync::MutexGuard;
 
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 use crate::injector_core::thread_local_registry::ThreadRegistration;
 
 /// Normalize a type_name signature by removing anonymous lifetime annotations.
@@ -30,12 +30,12 @@ fn normalize_signature(sig: &str) -> String {
 /// A `Mutex` that never stays poisoned: on panic it just recovers the guard.
 ///
 /// Only used on non-x86_64 architectures where the global mutex approach is still used.
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 struct NoPoisonMutex<T> {
     inner: Mutex<T>,
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 impl<T> NoPoisonMutex<T> {
     const fn new(value: T) -> Self {
         Self {
@@ -51,7 +51,7 @@ impl<T> NoPoisonMutex<T> {
     }
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 
 /// A high-level type that holds patch guards so that when it goes out of scope,
@@ -66,14 +66,14 @@ static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
 /// On other architectures, InjectorPP ensures thread safety by holding a global mutex
 /// for the entire lifetime of the patch.
 pub struct InjectorPP {
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
     registrations: Vec<ThreadRegistration>,
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
     guards: Vec<PatchGuard>,
     verifiers: Vec<CallCountVerifier>,
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
     _not_send: PhantomData<*const ()>,
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
     _lock: MutexGuard<'static, ()>,
 }
 
@@ -93,7 +93,7 @@ impl InjectorPP {
     /// let injector = InjectorPP::new();
     /// ```
     pub fn new() -> Self {
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
             Self {
                 registrations: Vec::new(),
@@ -102,7 +102,7 @@ impl InjectorPP {
             }
         }
 
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let lock = LOCK_FUNCTION.lock();
             Self {
@@ -117,13 +117,13 @@ impl InjectorPP {
     /// thread isolation is automatic. On other architectures, it holds
     /// the global mutex to prevent other threads from patching.
     pub fn prevent() -> Preventer {
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let lock = LOCK_FUNCTION.lock();
             Preventer { _lock: lock }
         }
 
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
             Preventer {
                 _not_send: PhantomData,
@@ -336,9 +336,9 @@ impl Default for InjectorPP {
 /// On x86_64, this is a no-op since thread-local dispatch naturally isolates threads.
 /// On other architectures, this holds the global mutex that prevents patching.
 pub struct Preventer {
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
     _lock: MutexGuard<'static, ()>,
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
     _not_send: PhantomData<*const ()>,
 }
 
@@ -410,13 +410,13 @@ impl WhenCalledBuilder<'_> {
             );
         }
 
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
             let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
             self.lib.registrations.push(reg);
         }
 
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
@@ -477,13 +477,13 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub unsafe fn will_execute_raw_unchecked(self, target: FuncPtr) {
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
             let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
             self.lib.registrations.push(reg);
         }
 
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
@@ -559,13 +559,13 @@ impl WhenCalledBuilder<'_> {
             );
         }
 
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
             let reg = self.when.will_return_boolean_thread_local(value);
             self.lib.registrations.push(reg);
         }
 
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let guard = self.when.will_return_boolean_guard(value);
             self.lib.guards.push(guard);
@@ -612,13 +612,13 @@ impl WhenCalledBuilderAsync<'_> {
             );
         }
 
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
             let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
             self.lib.registrations.push(reg);
         }
 
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
@@ -657,13 +657,13 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub unsafe fn will_return_async_unchecked(self, target: FuncPtr) {
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
             let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
             self.lib.registrations.push(reg);
         }
 
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
