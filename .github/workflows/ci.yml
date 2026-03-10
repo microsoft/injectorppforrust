@@ -87,6 +87,20 @@ jobs:
             cargo build --target ${{ matrix.target }} --release
           fi
 
+      - name: Test isolated (ARM targets)
+        if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'thumbv7neon-unknown-linux-gnueabihf'
+        shell: bash
+        env:
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          CARGO_TARGET_THUMBV7NEON_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+          OPENSSL_LIB_DIR: /usr/lib/arm-linux-gnueabihf
+          OPENSSL_INCLUDE_DIR: /usr/include/openssl
+          PKG_CONFIG_ALLOW_CROSS: 1
+          PKG_CONFIG_PATH: /usr/lib/arm-linux-gnueabihf/pkgconfig
+          RUST_BACKTRACE: full
+        run: |
+          cargo test -j 1 --target ${{ matrix.target }} --test thread_safety test_will_execute_raw_closure_per_thread -- --nocapture --test-threads=1
+
       - name: Test (ARM targets)
         if: matrix.target == 'armv7-unknown-linux-gnueabihf' || matrix.target == 'thumbv7neon-unknown-linux-gnueabihf'
         shell: bash

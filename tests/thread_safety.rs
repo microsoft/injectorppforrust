@@ -459,6 +459,12 @@ fn test_bool_two_threads_opposite_values() {
 /// Two threads use will_execute_raw with different closures for the same function.
 #[test]
 fn test_will_execute_raw_closure_per_thread() {
+    // Diagnostic: verify dispatcher+trampoline works before faking
+    eprintln!("[diag] test_will_execute_raw_closure_per_thread: calling get_value() before faking");
+    let pre_val = get_value();
+    eprintln!("[diag] pre-fake get_value() = {}", pre_val);
+    assert_eq!(pre_val, -1);
+
     let result1 = Arc::new(AtomicI32::new(0));
     let result2 = Arc::new(AtomicI32::new(0));
     let barrier = Arc::new(Barrier::new(2));
@@ -466,25 +472,39 @@ fn test_will_execute_raw_closure_per_thread() {
     let r1 = result1.clone();
     let b1 = barrier.clone();
     let h1 = thread::spawn(move || {
+        eprintln!("[diag] h1: creating injector");
         let mut injector = InjectorPP::new();
+        eprintln!("[diag] h1: registering closure");
         injector
             .when_called(injectorpp::func!(fn(get_value)() -> i32))
             .will_execute_raw(injectorpp::closure!(|| { 42 }, fn() -> i32));
+        eprintln!("[diag] h1: waiting at barrier");
         b1.wait();
-        r1.store(get_value(), Ordering::SeqCst);
+        eprintln!("[diag] h1: calling get_value()");
+        let val = get_value();
+        eprintln!("[diag] h1: get_value() = {}", val);
+        r1.store(val, Ordering::SeqCst);
         b1.wait();
+        eprintln!("[diag] h1: done");
     });
 
     let r2 = result2.clone();
     let b2 = barrier.clone();
     let h2 = thread::spawn(move || {
+        eprintln!("[diag] h2: creating injector");
         let mut injector = InjectorPP::new();
+        eprintln!("[diag] h2: registering closure");
         injector
             .when_called(injectorpp::func!(fn(get_value)() -> i32))
             .will_execute_raw(injectorpp::closure!(|| { 84 }, fn() -> i32));
+        eprintln!("[diag] h2: waiting at barrier");
         b2.wait();
-        r2.store(get_value(), Ordering::SeqCst);
+        eprintln!("[diag] h2: calling get_value()");
+        let val = get_value();
+        eprintln!("[diag] h2: get_value() = {}", val);
+        r2.store(val, Ordering::SeqCst);
         b2.wait();
+        eprintln!("[diag] h2: done");
     });
 
     h1.join().unwrap();

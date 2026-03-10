@@ -777,6 +777,11 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
     let max_b_range = if is_thumb { 16 * 1024 * 1024 } else { 32 * 1024 * 1024 };
     let patch_size = if distance < max_b_range { 4 } else { 12 };
 
+    eprintln!(
+        "[arm32-diag] install_dispatcher: func={:#x} clean={:#x} disp={:#x} dist={:#x} thumb={} patch={}",
+        func_addr as usize, func_addr_clean as usize, dispatcher_addr, distance, is_thumb, patch_size
+    );
+
     // Step 3: Create trampoline (copies patch_size bytes of original code)
     let (trampoline, trampoline_size) =
         create_trampoline_arm32(func_addr_clean, patch_size, is_thumb);
@@ -1056,6 +1061,29 @@ fn generate_branch_patch_arm32(
 
             let hw1: u16 = 0xF000 | (s << 10) | imm10;
             let hw2: u16 = 0x9000 | (j1 << 13) | (j2 << 11) | imm11;
+
+            eprintln!(
+                "[arm32-diag] B.W: src={:#x} target={:#x} offset={} hw1={:#06x} hw2={:#06x}",
+                src_addr, target_addr, offset, hw1, hw2
+            );
+
+            // Verify decode: reconstruct offset from encoded values
+            let dec_s = ((hw1 >> 10) & 1) as i32;
+            let dec_imm10 = (hw1 & 0x3FF) as i32;
+            let dec_j1 = ((hw2 >> 13) & 1) as i32;
+            let dec_j2 = ((hw2 >> 11) & 1) as i32;
+            let dec_imm11 = (hw2 & 0x7FF) as i32;
+            let dec_i1 = (!(dec_j1 ^ dec_s)) & 1;
+            let dec_i2 = (!(dec_j2 ^ dec_s)) & 1;
+            let dec_imm_raw = (dec_s << 23) | (dec_i1 << 22) | (dec_i2 << 21) | (dec_imm10 << 11) | dec_imm11;
+            let dec_imm_signed = if dec_s != 0 { dec_imm_raw | !0x00FFFFFF } else { dec_imm_raw };
+            let dec_offset = dec_imm_signed << 1;
+            let dec_target = (src_addr as i32 + 4 + dec_offset) as usize;
+            eprintln!(
+                "[arm32-diag] B.W verify: decoded_offset={} decoded_target={:#x} expected={:#x} match={}",
+                dec_offset, dec_target, target_addr, dec_target == target_addr
+            );
+            assert_eq!(dec_target, target_addr, "B.W encoding mismatch");
 
             let mut patch = vec![0u8; 4];
             patch[0..2].copy_from_slice(&hw1.to_le_bytes());
