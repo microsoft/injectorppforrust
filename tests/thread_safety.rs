@@ -886,3 +886,240 @@ fn test_string_return_thread_isolation() {
 
     assert_eq!(error_count.load(Ordering::SeqCst), 0);
 }
+
+// ============================================================================
+// Issue #81: Struct method thread isolation
+// Reproduces the scenario where a struct method fake in one test leaks to
+// another parallel test calling the same method without faking.
+// ============================================================================
+
+pub struct Widget {
+    value: i32,
+}
+
+impl Widget {
+    pub fn new(v: i32) -> Self {
+        Widget { value: v }
+    }
+
+    #[inline(never)]
+    pub fn get(&self) -> i32 {
+        std::hint::black_box(self.value)
+    }
+}
+
+/// Issue #81 scenario: Thread 1 fakes Widget::get to return 7, Thread 2 expects
+/// the original value. Without thread-local dispatch, this would sporadically fail.
+#[test]
+fn test_struct_method_thread_isolation_issue_81() {
+    let result_unfaked = Arc::new(AtomicI32::new(-1));
+    let barrier = Arc::new(Barrier::new(2));
+
+    // Thread 1: fakes Widget::get to return 7
+    let b1 = barrier.clone();
+    let h1 = thread::spawn(move || {
+        let mut injector = InjectorPP::new();
+        injector
+            .when_called(injectorpp::func!(fn (Widget::get)(&Widget) -> i32))
+            .will_execute(injectorpp::fake!(
+                func_type: fn(_w: &Widget) -> i32,
+                returns: 7
+            ));
+        b1.wait();
+        let w = Widget::new(0);
+        assert_eq!(w.get(), 7);
+        b1.wait();
+    });
+
+    // Thread 2: calls Widget::get without faking — should see the original value
+    let r = result_unfaked.clone();
+    let b2 = barrier.clone();
+    let h2 = thread::spawn(move || {
+        b2.wait();
+        let w = Widget::new(0);
+        r.store(w.get(), Ordering::SeqCst);
+        b2.wait();
+    });
+
+    h1.join().unwrap();
+    h2.join().unwrap();
+
+    // The unfaked thread must see the original value (0), not the fake (7)
+    assert_eq!(result_unfaked.load(Ordering::SeqCst), 0);
+}
+
+/// Issue #81 extended: Two threads fake the same struct method with different values.
+#[test]
+fn test_struct_method_two_threads_different_fakes() {
+    let result1 = Arc::new(AtomicI32::new(0));
+    let result2 = Arc::new(AtomicI32::new(0));
+    let barrier = Arc::new(Barrier::new(2));
+
+    let r1 = result1.clone();
+    let b1 = barrier.clone();
+    let h1 = thread::spawn(move || {
+        let mut injector = InjectorPP::new();
+        injector
+            .when_called(injectorpp::func!(fn (Widget::get)(&Widget) -> i32))
+            .will_execute(injectorpp::fake!(
+                func_type: fn(_w: &Widget) -> i32,
+                returns: 100
+            ));
+        b1.wait();
+        let w = Widget::new(5);
+        r1.store(w.get(), Ordering::SeqCst);
+        b1.wait();
+    });
+
+    let r2 = result2.clone();
+    let b2 = barrier.clone();
+    let h2 = thread::spawn(move || {
+        let mut injector = InjectorPP::new();
+        injector
+            .when_called(injectorpp::func!(fn (Widget::get)(&Widget) -> i32))
+            .will_execute(injectorpp::fake!(
+                func_type: fn(_w: &Widget) -> i32,
+                returns: 200
+            ));
+        b2.wait();
+        let w = Widget::new(5);
+        r2.store(w.get(), Ordering::SeqCst);
+        b2.wait();
+    });
+
+    h1.join().unwrap();
+    h2.join().unwrap();
+
+    assert_eq!(result1.load(Ordering::SeqCst), 100);
+    assert_eq!(result2.load(Ordering::SeqCst), 200);
+}
+
+// ============================================================================
+// Issue #42: Concurrent calling while another thread toggles fakes
+// One thread continuously calls a function while another thread repeatedly
+// sets up and tears down fakes. This must not crash or produce UB.
+// ============================================================================
+
+#[inline(never)]
+fn concurrent_target() -> i32 {
+    std::hint::black_box(42)
+}
+
+/// Issue #42 scenario: One thread calls foo() in a tight loop, another thread
+/// repeatedly creates/drops fakes. Without thread-local dispatch, this would
+/// cause access violations or stack overruns.
+#[test]
+fn test_concurrent_call_during_setup_teardown_issue_42() {
+    let done = Arc::new(AtomicBool::new(false));
+    let error_count = Arc::new(AtomicUsize::new(0));
+
+    // Thread 1: continuously calls the function without faking
+    let d1 = done.clone();
+    let e1 = error_count.clone();
+    let caller = thread::spawn(move || {
+        while !d1.load(Ordering::SeqCst) {
+            let val = concurrent_target();
+            // Should always see 42 (original) since this thread has no fake
+            if val != 42 {
+                e1.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    });
+
+    // Thread 2: repeatedly sets up and tears down fakes
+    for _ in 0..50 {
+        let mut injector = InjectorPP::new();
+        injector
+            .when_called(injectorpp::func!(fn(concurrent_target)() -> i32))
+            .will_execute(injectorpp::fake!(
+                func_type: fn() -> i32,
+                returns: 99
+            ));
+        // While the fake is active, this thread should see 99
+        assert_eq!(concurrent_target(), 99);
+        // Drop injector — restores for this thread
+    }
+
+    done.store(true, Ordering::SeqCst);
+    caller.join().unwrap();
+
+    assert_eq!(error_count.load(Ordering::SeqCst), 0);
+    // After all fakes are dropped, original is restored
+    assert_eq!(concurrent_target(), 42);
+}
+
+// ============================================================================
+// Issues #8/#14: Parallel scope-based restore
+// The original flaky test was single-threaded. This validates that scope-based
+// restore works correctly when multiple threads do it concurrently.
+// ============================================================================
+
+#[inline(never)]
+fn scoped_bool_func() -> bool {
+    std::hint::black_box(false)
+}
+
+/// Parallel version of `test_will_return_boolean_when_in_scope_should_restore`.
+/// Multiple threads concurrently fake a boolean function inside a scope, then
+/// verify the original is restored after the scope exits.
+#[test]
+fn test_parallel_scope_restore_issues_8_14() {
+    const THREAD_COUNT: usize = 4;
+    const ITERATIONS: usize = 50;
+    let error_count = Arc::new(AtomicUsize::new(0));
+
+    let handles: Vec<_> = (0..THREAD_COUNT)
+        .map(|_| {
+            let err = error_count.clone();
+            thread::spawn(move || {
+                for _ in 0..ITERATIONS {
+                    {
+                        let mut injector = InjectorPP::new();
+                        injector
+                            .when_called(injectorpp::func!(fn(scoped_bool_func)() -> bool))
+                            .will_return_boolean(true);
+                        if !scoped_bool_func() {
+                            err.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }
+                    // After drop, this thread should see the original value
+                    if scoped_bool_func() {
+                        err.fetch_add(1, Ordering::SeqCst);
+                    }
+                }
+            })
+        })
+        .collect();
+
+    for h in handles {
+        h.join().unwrap();
+    }
+
+    assert_eq!(error_count.load(Ordering::SeqCst), 0);
+    assert!(!scoped_bool_func());
+}
+
+// ============================================================================
+// Struct method scope restore: fake a struct method in a scope, verify restore
+// ============================================================================
+
+/// Struct method fake inside a scope should be restored after the scope exits.
+#[test]
+fn test_struct_method_scope_restore() {
+    let w = Widget::new(10);
+    assert_eq!(w.get(), 10);
+
+    {
+        let mut injector = InjectorPP::new();
+        injector
+            .when_called(injectorpp::func!(fn (Widget::get)(&Widget) -> i32))
+            .will_execute(injectorpp::fake!(
+                func_type: fn(_w: &Widget) -> i32,
+                returns: 77
+            ));
+        assert_eq!(w.get(), 77);
+    }
+
+    // After scope exit, original should be restored
+    assert_eq!(w.get(), 10);
+}
