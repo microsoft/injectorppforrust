@@ -786,7 +786,7 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
     }
 
     // Step 4: Generate branch patch (12 bytes, same format as patch_arm.rs)
-    let patch = generate_branch_patch_arm32(dispatcher_addr, is_thumb, func_addr_clean as usize);
+    let patch = generate_branch_patch_arm32(dispatcher_addr, is_thumb);
 
     // Read original bytes before patching
     let original_bytes = unsafe { read_bytes(func_addr_clean, PATCH_SIZE) };
@@ -820,8 +820,10 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
 fn build_dispatcher_code_arm32(method_key: u32, trampoline_addr: u32) -> Vec<u8> {
     let fn_addr = get_thread_target as *const () as u32;
 
+    // Push 6 registers (24 bytes) to maintain 8-byte stack alignment per AAPCS.
+    // r4 is included as padding (callee-saved, correctly saved/restored).
     let instructions: [u32; 13] = [
-        0xE92D401F, // PUSH {r0-r3, lr}
+        0xE92D402F, // PUSH {r0-r3, r4, lr}
         0xED2D0B10, // VPUSH {d0-d7}
         0xE59F0018, // LDR r0, [pc, #24]  → method_key
         0xE59F1018, // LDR r1, [pc, #24]  → trampoline_addr
@@ -829,7 +831,7 @@ fn build_dispatcher_code_arm32(method_key: u32, trampoline_addr: u32) -> Vec<u8>
         0xE12FFF3C, // BLX r12
         0xE1A0C000, // MOV r12, r0
         0xECBD0B10, // VPOP {d0-d7}
-        0xE8BD401F, // POP {r0-r3, lr}
+        0xE8BD402F, // POP {r0-r3, r4, lr}
         0xE12FFF1C, // BX r12
         method_key,
         trampoline_addr,
@@ -984,33 +986,49 @@ fn fixup_arm32_pc_relative(
 }
 
 /// Generate the 12-byte branch patch for ARM32.
-/// Same format as existing patch_arm.rs: LDR + BX + .word
+/// Uses r12 (IP, intra-procedure scratch) to avoid clobbering callee-saved registers.
 #[cfg(target_arch = "arm")]
-fn generate_branch_patch_arm32(dispatcher_addr: usize, is_thumb: bool, src_addr: usize) -> Vec<u8> {
+fn generate_branch_patch_arm32(dispatcher_addr: usize, is_thumb: bool) -> Vec<u8> {
     let mut patch = [0u8; 12];
+    let addr = dispatcher_addr as u32;
 
     if is_thumb {
-        // Thumb mode: LDR r7, [pc, #0]; BX r7; .word dispatcher_addr
-        // LDR r7, [pc, #0] = 0x4F00 (16-bit)
-        // BX r7 = 0x4738 (16-bit)
-        let combined: u32 = 0x47384F00;
-        patch[0..4].copy_from_slice(&combined.to_le_bytes());
-        // .word dispatcher_addr (no Thumb bit — dispatcher is ARM mode)
-        patch[4..8].copy_from_slice(&(dispatcher_addr as u32).to_le_bytes());
-        // unused padding
-        patch[8..12].copy_from_slice(&0u32.to_le_bytes());
+        // Thumb mode: MOVW r12, #low16; MOVT r12, #high16; BX r12; NOP
+        // This is alignment-independent and doesn't clobber callee-saved registers.
+        let low16 = (addr & 0xFFFF) as u16;
+        let high16 = ((addr >> 16) & 0xFFFF) as u16;
 
-        // Handle Thumb alignment: if source is not aligned on 32 bit, add a NOP prefix
-        if src_addr % 4 != 0 {
-            patch.rotate_right(2);
-            patch[0] = 0xC0;
-            patch[1] = 0x46; // NOP instruction in Thumb mode
-        }
+        // MOVW r12, #low16 (Thumb-2 T3 encoding, 4 bytes)
+        let imm4 = ((low16 >> 12) & 0xF) as u16;
+        let i = ((low16 >> 11) & 1) as u16;
+        let imm3 = ((low16 >> 8) & 0x7) as u16;
+        let imm8 = (low16 & 0xFF) as u16;
+        let hw1: u16 = 0xF240 | (i << 10) | imm4;
+        let hw2: u16 = (imm3 << 12) | (12 << 8) | imm8;
+        patch[0..2].copy_from_slice(&hw1.to_le_bytes());
+        patch[2..4].copy_from_slice(&hw2.to_le_bytes());
+
+        // MOVT r12, #high16 (Thumb-2 T1 encoding, 4 bytes)
+        let imm4 = ((high16 >> 12) & 0xF) as u16;
+        let i = ((high16 >> 11) & 1) as u16;
+        let imm3 = ((high16 >> 8) & 0x7) as u16;
+        let imm8 = (high16 & 0xFF) as u16;
+        let hw1: u16 = 0xF2C0 | (i << 10) | imm4;
+        let hw2: u16 = (imm3 << 12) | (12 << 8) | imm8;
+        patch[4..6].copy_from_slice(&hw1.to_le_bytes());
+        patch[6..8].copy_from_slice(&hw2.to_le_bytes());
+
+        // BX r12 (0x4760) + NOP (0xBF00)
+        patch[8] = 0x60;
+        patch[9] = 0x47;
+        patch[10] = 0x00;
+        patch[11] = 0xBF;
     } else {
-        // ARM mode: LDR r9, [pc, #-0]; BX r9; .word dispatcher_addr
-        patch[0..4].copy_from_slice(&0xE51F9000u32.to_le_bytes());
-        patch[4..8].copy_from_slice(&0xE12FFF19u32.to_le_bytes());
-        patch[8..12].copy_from_slice(&(dispatcher_addr as u32).to_le_bytes());
+        // ARM mode: LDR r12, [pc, #-0]; BX r12; .word dispatcher_addr
+        // r12 (IP) is the intra-procedure scratch register, safe to clobber.
+        patch[0..4].copy_from_slice(&0xE51FC000u32.to_le_bytes());
+        patch[4..8].copy_from_slice(&0xE12FFF1Cu32.to_le_bytes());
+        patch[8..12].copy_from_slice(&addr.to_le_bytes());
     }
 
     patch.to_vec()
