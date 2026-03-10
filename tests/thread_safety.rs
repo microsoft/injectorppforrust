@@ -1,7 +1,7 @@
-// Thread-local dispatch is only available on x86_64. On other architectures,
+// Thread-local dispatch is available on x86_64 and aarch64. On other architectures,
 // InjectorPP uses a global mutex which deadlocks with the barrier-based
 // synchronization these tests rely on.
-#![cfg(target_arch = "x86_64")]
+#![cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::{Arc, Barrier};

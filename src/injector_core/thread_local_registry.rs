@@ -1,4 +1,4 @@
-#![cfg(target_arch = "x86_64")]
+#![cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 
 use std::cell::Cell;
 use std::cell::UnsafeCell;
@@ -13,6 +13,11 @@ use crate::injector_core::linuxapi::__clear_cache;
 
 #[cfg(target_os = "windows")]
 use crate::injector_core::winapi::*;
+
+#[cfg(target_arch = "aarch64")]
+use crate::injector_core::arm64_codegenerator::*;
+#[cfg(target_arch = "aarch64")]
+use crate::injector_core::utils::*;
 
 thread_local! {
     static THREAD_REPLACEMENTS: UnsafeCell<HashMap<usize, usize>> = UnsafeCell::new(HashMap::new());
@@ -68,6 +73,7 @@ fn tls_remove(key: &usize) {
     });
 }
 
+#[allow(dead_code)] // Fields are stored to keep JIT memory allocations alive
 struct MethodEntry {
     trampoline: *mut u8,
     trampoline_size: usize,
@@ -100,36 +106,35 @@ impl Drop for ThreadRegistration {
         // Remove this thread's replacement from thread-local storage
         tls_remove(&self.method_key);
 
-        // Free extra JIT block (e.g., return-boolean code) if any
+        // Free extra JIT block (e.g., return-boolean code) if any.
+        // This is safe because tls_remove above already ensures no dispatcher
+        // will route to this block from the current thread.
         if let Some((ptr, _size)) = self.extra_jit {
             unsafe {
-                #[cfg(any(target_os = "linux", target_os = "macos"))]
-                {
-                    libc::munmap(ptr as *mut libc::c_void, _size);
-                }
-                #[cfg(target_os = "windows")]
-                {
-                    VirtualFree(ptr as *mut libc::c_void, 0, MEM_RELEASE);
-                }
+                free_jit_block(ptr, _size);
             }
         }
 
-        // Decrement ref_count in global registry
+        // Decrement ref_count in global registry.
+        // We intentionally do NOT restore the original function bytes or free the
+        // dispatcher/trampoline when ref_count reaches 0. The dispatcher remains
+        // patched into the function permanently. When no thread has a replacement
+        // registered, the dispatcher routes through the trampoline to the original
+        // function, preserving correct behavior.
+        //
+        // This avoids a race condition on ARM64 (and theoretically x86_64) where
+        // restoring the original bytes and freeing the dispatcher/trampoline can
+        // race with another CPU core still executing inside the dispatcher or
+        // trampoline from a prior call. On ARM64, instruction cache invalidation
+        // is asynchronous across cores, so another core may still be fetching
+        // pre-invalidation instructions when the memory is freed.
+        //
+        // The tradeoff is a small amount of leaked JIT memory (~300 bytes per
+        // unique function ever patched) and a minor overhead for calling unpatched
+        // functions (one TLS lookup per call). Both are negligible for test code.
         let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = registry.get_mut(&self.method_key) {
             entry.ref_count = entry.ref_count.saturating_sub(1);
-            if entry.ref_count == 0 {
-                // Last reference removed — restore original function and clean up
-                unsafe {
-                    patch_function(entry.func_ptr, &entry.original_bytes[..entry.patch_size]);
-                    clear_cache_ptr(entry.func_ptr, entry.patch_size);
-
-                    free_jit_block(entry.trampoline, entry.trampoline_size);
-                    free_jit_block(entry.dispatcher_jit, entry.dispatcher_jit_size);
-                }
-
-                registry.remove(&self.method_key);
-            }
         }
     }
 }
@@ -162,9 +167,14 @@ pub(crate) fn register_replacement(
     extra_jit: Option<(*mut u8, usize)>,
 ) -> ThreadRegistration {
     // Resolve import thunks (jmp [rip+disp]) to the actual function address.
-    // This is critical on Windows where extern functions go through an IAT thunk.
+    // This is critical on Windows x86_64 where extern functions go through an IAT thunk.
     let raw_addr = func_ptr.as_ptr() as *mut u8;
+
+    #[cfg(target_arch = "x86_64")]
     let func_addr = unsafe { resolve_function_address(raw_addr) };
+
+    #[cfg(target_arch = "aarch64")]
+    let func_addr = raw_addr;
     let method_key = func_addr as usize;
 
     {
@@ -187,13 +197,13 @@ pub(crate) fn register_replacement(
 }
 
 /// Resolve import thunks to the actual function address.
-///
-/// On Windows, extern "C" functions often go through an import address table (IAT) thunk:
+/// On Windows x86_64, extern "C" functions often go through an import address table (IAT) thunk:
 /// `jmp [rip+disp32]` (FF 25 xx xx xx xx). This reads the target from the IAT and returns
 /// the real function address. For non-thunk functions, returns the address unchanged.
 ///
 /// This is important because the trampoline copies the original function bytes, and
 /// RIP-relative instructions would resolve to wrong addresses in the trampoline.
+#[cfg(target_arch = "x86_64")]
 unsafe fn resolve_function_address(func_addr: *mut u8) -> *mut u8 {
     let code = std::slice::from_raw_parts(func_addr, 6);
     if code[0] == 0xFF && code[1] == 0x25 {
@@ -202,7 +212,6 @@ unsafe fn resolve_function_address(func_addr: *mut u8) -> *mut u8 {
         let rip_after_insn = func_addr.add(6);
         let iat_entry = rip_after_insn.offset(disp as isize) as *const *mut u8;
         let real_addr = std::ptr::read(iat_entry);
-        // Recursively resolve in case of chained thunks
         return resolve_function_address(real_addr);
     }
     func_addr
@@ -213,6 +222,19 @@ unsafe fn resolve_function_address(func_addr: *mut u8) -> *mut u8 {
 /// 2. Generate the dispatcher JIT code
 /// 3. Patch the original function to jump to the dispatcher
 fn install_dispatcher(func_addr: *mut u8, method_key: usize) -> MethodEntry {
+    #[cfg(target_arch = "x86_64")]
+    {
+        install_dispatcher_x86_64(func_addr, method_key)
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        install_dispatcher_aarch64(func_addr, method_key)
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn install_dispatcher_x86_64(func_addr: *mut u8, method_key: usize) -> MethodEntry {
     // Step 1: Create trampoline from original function bytes
     let (trampoline, trampoline_size, copy_size) = create_trampoline(func_addr, method_key);
 
@@ -250,9 +272,482 @@ fn install_dispatcher(func_addr: *mut u8, method_key: usize) -> MethodEntry {
 }
 
 // ============================================================================
+// ARM64 Dispatcher JIT Code Generation
+// ============================================================================
+
+#[cfg(target_arch = "aarch64")]
+fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEntry {
+    // ARM64 uses a dynamic patch size based on the distance between the function
+    // and its dispatcher:
+    //
+    // - If within ±128MB: 4-byte patch (single B instruction).
+    //   A 4-byte aligned write is atomic on ARM64, ensuring cross-core visibility.
+    //   Another core sees either the old instruction or the new B, never a partial mix.
+    //
+    // - If beyond ±128MB: 12-byte patch (ADRP + ADD + BR x16).
+    //   This is needed for system library functions (e.g. getenv, memset) on macOS
+    //   where the shared cache addresses can be far from allocatable JIT memory.
+    //   The 12-byte write is NOT atomic across cores, but the initial patching happens
+    //   under the REGISTRY lock (only one thread patches each function). Once installed,
+    //   the dispatcher is safe for concurrent execution.
+
+    let near_src =
+        unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(func_addr as *mut ()).unwrap()) };
+
+    // Step 1: Pre-allocate dispatcher buffer to determine its address.
+    // We allocate with the maximum possible code size so the address is stable.
+    const DISPATCHER_MAX_SIZE: usize = 256;
+    let dispatcher = allocate_jit_memory(&near_src, DISPATCHER_MAX_SIZE);
+    let dispatcher_addr = dispatcher as usize;
+
+    // Step 2: Determine patch size based on actual distance to dispatcher.
+    // If within ±128MB, B instruction (4 bytes) reaches; otherwise ADRP+ADD+BR (12 bytes).
+    let branch_instrs = crate::injector_core::arm64_codegenerator::maybe_emit_long_jump(
+        func_addr as usize,
+        dispatcher_addr,
+    );
+    let patch_size = branch_instrs.len() * 4;
+
+    // Step 3: Create trampoline with the correct copy_size (must match patch_size)
+    let (trampoline, trampoline_size) = create_trampoline_aarch64(func_addr, patch_size);
+    let trampoline_addr = trampoline as usize;
+
+    // Step 4: Generate dispatcher code with the real trampoline address and write
+    // to the pre-allocated buffer.
+    let dispatcher_code =
+        build_dispatcher_code_aarch64(method_key as u64, trampoline_addr as u64);
+    assert!(
+        dispatcher_code.len() <= DISPATCHER_MAX_SIZE,
+        "Dispatcher code ({} bytes) exceeds pre-allocated buffer ({} bytes)",
+        dispatcher_code.len(),
+        DISPATCHER_MAX_SIZE
+    );
+    unsafe {
+        inject_asm_code(&dispatcher_code, dispatcher);
+    }
+
+    // Step 5: Generate branch patch
+    let patch = generate_branch_patch_aarch64(func_addr as usize, dispatcher_addr);
+    assert_eq!(
+        patch.len(),
+        patch_size,
+        "Branch patch size changed unexpectedly"
+    );
+
+    // Read original bytes before patching
+    let original_bytes = unsafe { read_bytes(func_addr, patch_size) };
+
+    // Step 6: Patch the original function
+    unsafe {
+        patch_function(func_addr, &patch);
+    }
+
+    MethodEntry {
+        trampoline,
+        trampoline_size,
+        dispatcher_jit: dispatcher,
+        dispatcher_jit_size: DISPATCHER_MAX_SIZE,
+        original_bytes,
+        func_ptr: func_addr,
+        patch_size,
+        ref_count: 0,
+    }
+}
+
+/// Generate branch patch bytes for ARM64.
+/// Returns 4 bytes (single B) if within ±128MB, or 12 bytes (ADRP+ADD+BR) otherwise.
+#[cfg(target_arch = "aarch64")]
+fn generate_branch_patch_aarch64(from: usize, to: usize) -> Vec<u8> {
+    let instrs: Vec<u32> =
+        crate::injector_core::arm64_codegenerator::maybe_emit_long_jump(from, to);
+    let mut bytes = Vec::with_capacity(instrs.len() * 4);
+    for insn in &instrs {
+        bytes.extend_from_slice(&insn.to_le_bytes());
+    }
+    bytes
+}
+
+/// Build the ARM64 dispatcher code bytes without allocating JIT memory.
+#[cfg(target_arch = "aarch64")]
+fn build_dispatcher_code_aarch64(method_key_val: u64, trampoline_val: u64) -> Vec<u8> {
+    let fn_addr = get_thread_target as *const () as u64;
+
+    let mut code: Vec<u8> = Vec::with_capacity(256);
+
+    // ARM64 calling convention:
+    // x0-x7: integer arguments (must save/restore)
+    // x8: indirect result location (must save/restore)
+    // x9-x15: caller-saved temporaries (can clobber)
+    // x16-x17: intra-procedure-call scratch (can clobber)
+    // x29: frame pointer, x30: link register
+    // q0-q7 (v0-v7): floating point/SIMD arguments (must save/restore)
+
+    // Save x0-x7, x8, x30 (link register) using STP (store pair)
+    // STP x0, x1, [sp, #-16]! etc.
+    // We need to save: x0-x7 (8 regs), x8, x30 = 10 regs = 80 bytes
+    // Plus q0-q7 = 8 × 16 = 128 bytes
+    // Total: 208 bytes, round up to 224 for 16-byte alignment
+
+    // sub sp, sp, #224
+    emit_sub_sp_imm(&mut code, 224);
+
+    // Save integer registers: x0-x7, x8, x30
+    emit_stp_x(&mut code, 0, 1, 0);     // stp x0, x1, [sp, #0]
+    emit_stp_x(&mut code, 2, 3, 16);    // stp x2, x3, [sp, #16]
+    emit_stp_x(&mut code, 4, 5, 32);    // stp x4, x5, [sp, #32]
+    emit_stp_x(&mut code, 6, 7, 48);    // stp x6, x7, [sp, #48]
+    emit_stp_x(&mut code, 8, 30, 64);   // stp x8, x30, [sp, #64]
+
+    // Save SIMD/FP registers: q0-q7
+    emit_stp_q(&mut code, 0, 1, 80);    // stp q0, q1, [sp, #80]
+    emit_stp_q(&mut code, 2, 3, 112);   // stp q2, q3, [sp, #112]
+    emit_stp_q(&mut code, 4, 5, 144);   // stp q4, q5, [sp, #144]
+    emit_stp_q(&mut code, 6, 7, 176);   // stp q6, q7, [sp, #176]
+
+    // Load arguments for get_thread_target(method_key, trampoline_addr)
+    // x0 = method_key, x1 = trampoline_addr
+    emit_mov_x_imm64(&mut code, 0, method_key_val);
+    emit_mov_x_imm64(&mut code, 1, trampoline_val);
+
+    // Load function address and call
+    emit_mov_x_imm64(&mut code, 9, fn_addr);
+    // BLR x9
+    emit_blr(&mut code, 9);
+
+    // Save return value (target address) in x9
+    // MOV x9, x0
+    emit_mov_reg(&mut code, 9, 0);
+
+    // Restore SIMD/FP registers: q0-q7
+    emit_ldp_q(&mut code, 0, 1, 80);
+    emit_ldp_q(&mut code, 2, 3, 112);
+    emit_ldp_q(&mut code, 4, 5, 144);
+    emit_ldp_q(&mut code, 6, 7, 176);
+
+    // Restore integer registers: x0-x7, x8, x30
+    emit_ldp_x(&mut code, 0, 1, 0);
+    emit_ldp_x(&mut code, 2, 3, 16);
+    emit_ldp_x(&mut code, 4, 5, 32);
+    emit_ldp_x(&mut code, 6, 7, 48);
+    emit_ldp_x(&mut code, 8, 30, 64);
+
+    // add sp, sp, #224
+    emit_add_sp_imm(&mut code, 224);
+
+    // BR x9 (jump to target)
+    let br = emit_br(u8_to_bits::<5>(9));
+    code.extend_from_slice(&bool_array_to_u32(br).to_le_bytes());
+
+    code
+}
+
+/// Create a trampoline for ARM64: copy original instructions + absolute branch back.
+/// ARM64 instructions are fixed 4 bytes, so copy_size is always instruction-aligned.
+/// PC-relative instructions (ADRP, ADR, B/BL, LDR literal, etc.) are adjusted to
+/// account for the trampoline's different address.
+#[cfg(target_arch = "aarch64")]
+fn create_trampoline_aarch64(
+    func_addr: *mut u8,
+    copy_size: usize,
+) -> (*mut u8, usize) {
+    // The jump-back uses MOVZ + MOVK×3 + BR = 20 bytes (5 instructions)
+    let jump_back_size = 20;
+    let trampoline_total = copy_size + jump_back_size;
+
+    let near_src =
+        unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(func_addr as *mut ()).unwrap()) };
+    let trampoline = allocate_jit_memory(&near_src, trampoline_total);
+
+    // Build the complete trampoline content in a local buffer
+    let mut buf = vec![0u8; trampoline_total];
+
+    // Copy original instruction bytes into buffer
+    unsafe {
+        std::ptr::copy_nonoverlapping(func_addr, buf.as_mut_ptr(), copy_size);
+    }
+
+    // Fix up PC-relative instructions in the buffer (using trampoline's target address)
+    fixup_aarch64_pc_relative_buf(&mut buf, trampoline, func_addr, copy_size);
+
+    // Append absolute jump back to original + copy_size.
+    // Use x17 (IP1) instead of x16 (IP0) because the copied instructions may use x16
+    // (e.g., Windows ARM64 import thunks start with ADRP x16). The jump-back must not
+    // clobber registers set by the copied instructions before they're consumed by the
+    // original code at func_addr + copy_size.
+    let jump_back_target = (func_addr as usize + copy_size) as u64;
+    let reg: [bool; 5] = u8_to_bits::<5>(17); // x17 (IP1) scratch register
+
+    let instrs: [u32; 5] = [
+        bool_array_to_u32(emit_movz_from_address(
+            jump_back_target,
+            0,
+            true,
+            u8_to_bits::<2>(0),
+            reg,
+        )),
+        bool_array_to_u32(emit_movk_from_address(
+            jump_back_target,
+            16,
+            true,
+            u8_to_bits::<2>(1),
+            reg,
+        )),
+        bool_array_to_u32(emit_movk_from_address(
+            jump_back_target,
+            32,
+            true,
+            u8_to_bits::<2>(2),
+            reg,
+        )),
+        bool_array_to_u32(emit_movk_from_address(
+            jump_back_target,
+            48,
+            true,
+            u8_to_bits::<2>(3),
+            reg,
+        )),
+        bool_array_to_u32(emit_br(reg)),
+    ];
+    for (i, insn) in instrs.iter().enumerate() {
+        buf[copy_size + i * 4..copy_size + (i + 1) * 4].copy_from_slice(&insn.to_le_bytes());
+    }
+
+    // Write the entire trampoline using inject_asm_code (handles macOS W^X + cache flush)
+    unsafe {
+        inject_asm_code(&buf, trampoline);
+    }
+
+    (trampoline, trampoline_total)
+}
+
+/// Fix up PC-relative instructions in an ARM64 trampoline buffer.
+///
+/// ARM64 PC-relative instructions use offsets relative to the instruction's address.
+/// When copied to a trampoline at a different address, these offsets must be adjusted
+/// by the delta between the original and trampoline addresses.
+///
+/// `buf` contains the copied instructions (modified in-place).
+/// `trampoline_addr` is the target address where the buffer will be written.
+/// `original_addr` is where the instructions were originally located.
+///
+/// If the adjusted offset overflows the instruction's immediate field, the instruction
+/// is NOP-ed out (safe because the trampoline is followed by a jump back to the
+/// original function which will re-execute the correct code path).
+#[cfg(target_arch = "aarch64")]
+fn fixup_aarch64_pc_relative_buf(
+    buf: &mut [u8],
+    trampoline_addr: *mut u8,
+    original_addr: *mut u8,
+    copy_size: usize,
+) {
+    let num_insns = copy_size / 4;
+    let nop: u32 = 0xd503201f;
+
+    for i in 0..num_insns {
+        let offset = i * 4;
+        let insn = u32::from_le_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]]);
+
+        let orig_pc = original_addr as i64 + (i as i64) * 4;
+        let tramp_pc = trampoline_addr as i64 + (i as i64) * 4;
+        let delta_bytes = orig_pc - tramp_pc;
+        let delta_insns = delta_bytes / 4;
+
+        let op_top6 = (insn >> 26) & 0x3F;
+        let op_top8 = (insn >> 24) & 0xFF;
+
+        // ADRP: bit[31]=1, bits[28:24]=10000
+        // ADR:  bit[31]=0, bits[28:24]=10000
+        if (insn >> 24) & 0x1F == 0x10 {
+            let is_adrp = (insn >> 31) != 0;
+            // Extract immhi (bits 23:5) and immlo (bits 30:29)
+            let immlo = (insn >> 29) & 0x3;
+            let immhi = (insn >> 5) & 0x7FFFF;
+            let imm21 = (immhi << 2) | immlo;
+            let imm21_signed = if (imm21 >> 20) & 1 != 0 {
+                ((imm21 | 0xFFE00000) as i32) as i64
+            } else {
+                imm21 as i64
+            };
+
+            let new_imm21 = if is_adrp {
+                // ADRP: target = (PC & ~0xFFF) + (imm21 << 12)
+                let page_delta = ((orig_pc & !0xFFF) - (tramp_pc & !0xFFF)) >> 12;
+                imm21_signed + page_delta
+            } else {
+                // ADR: target = PC + imm21
+                imm21_signed + delta_bytes
+            };
+
+            if new_imm21 >= -(1 << 20) && new_imm21 < (1 << 20) {
+                let new_u = (new_imm21 as u32) & 0x1FFFFF;
+                let new_immhi = (new_u >> 2) & 0x7FFFF;
+                let new_immlo = new_u & 0x3;
+                let new_insn = (insn & !(0x7FFFF << 5) & !(0x3 << 29))
+                    | (new_immhi << 5)
+                    | (new_immlo << 29);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
+            }
+            continue;
+        }
+
+        // B/BL: 26-bit signed offset (instruction-scaled)
+        if op_top6 == 0b000101 || op_top6 == 0b100101 {
+            let imm26 = insn & 0x03FFFFFF;
+            let imm26_signed = if (imm26 >> 25) & 1 != 0 {
+                (imm26 | 0xFC000000) as i32
+            } else {
+                imm26 as i32
+            };
+            let new_imm26 = (imm26_signed as i64) + delta_insns;
+            if new_imm26 >= -(1 << 25) && new_imm26 < (1 << 25) {
+                let new_insn =
+                    (insn & 0xFC000000) | ((new_imm26 as u32) & 0x03FFFFFF);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
+            }
+            continue;
+        }
+
+        // B.cond / CBZ / CBNZ / LDR literal: 19-bit signed offset (instruction-scaled)
+        if matches!(
+            op_top8,
+            0x54 | 0x34 | 0xB4 | 0x35 | 0xB5 | 0x18 | 0x58 | 0x98 | 0x1C | 0x5C | 0x9C
+        ) {
+            let imm19 = (insn >> 5) & 0x7FFFF;
+            let imm19_signed = if (imm19 >> 18) & 1 != 0 {
+                (imm19 | 0xFFF80000) as i32
+            } else {
+                imm19 as i32
+            };
+            let new_imm19 = (imm19_signed as i64) + delta_insns;
+            if new_imm19 >= -(1 << 18) && new_imm19 < (1 << 18) {
+                let new_insn =
+                    (insn & !(0x7FFFF << 5)) | (((new_imm19 as u32) & 0x7FFFF) << 5);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
+            }
+            continue;
+        }
+
+        // TBZ / TBNZ: 14-bit signed offset (instruction-scaled)
+        if matches!(op_top8, 0x36 | 0xB6 | 0x37 | 0xB7) {
+            let imm14 = (insn >> 5) & 0x3FFF;
+            let imm14_signed = if (imm14 >> 13) & 1 != 0 {
+                (imm14 | 0xFFFFC000) as i32
+            } else {
+                imm14 as i32
+            };
+            let new_imm14 = (imm14_signed as i64) + delta_insns;
+            if new_imm14 >= -(1 << 13) && new_imm14 < (1 << 13) {
+                let new_insn =
+                    (insn & !(0x3FFF << 5)) | (((new_imm14 as u32) & 0x3FFF) << 5);
+                buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
+            } else {
+                buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
+            }
+        }
+    }
+}
+
+// ============================================================================
+// ARM64 Assembly Emission Helpers
+// ============================================================================
+
+/// SUB SP, SP, #imm12
+#[cfg(target_arch = "aarch64")]
+fn emit_sub_sp_imm(code: &mut Vec<u8>, imm: u16) {
+    // 1 1 0 1 0 0 0 1 0 0 [imm12] [Rn=SP(31)] [Rd=SP(31)]
+    let insn: u32 = 0xD1000000 | ((imm as u32 & 0xFFF) << 10) | (31 << 5) | 31;
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+/// ADD SP, SP, #imm12
+#[cfg(target_arch = "aarch64")]
+fn emit_add_sp_imm(code: &mut Vec<u8>, imm: u16) {
+    // 1 0 0 1 0 0 0 1 0 0 [imm12] [Rn=SP(31)] [Rd=SP(31)]
+    let insn: u32 = 0x91000000 | ((imm as u32 & 0xFFF) << 10) | (31 << 5) | 31;
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+/// STP Xt1, Xt2, [SP, #imm7*8]
+#[cfg(target_arch = "aarch64")]
+fn emit_stp_x(code: &mut Vec<u8>, rt1: u8, rt2: u8, offset: i16) {
+    let imm7 = ((offset / 8) as u32) & 0x7F;
+    // 10 1 0 1 0 0 1 0 0 [imm7] [Rt2] [Rn=SP(31)] [Rt1]
+    let insn: u32 = 0xA9000000 | (imm7 << 15) | ((rt2 as u32) << 10) | (31 << 5) | (rt1 as u32);
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+/// LDP Xt1, Xt2, [SP, #imm7*8]
+#[cfg(target_arch = "aarch64")]
+fn emit_ldp_x(code: &mut Vec<u8>, rt1: u8, rt2: u8, offset: i16) {
+    let imm7 = ((offset / 8) as u32) & 0x7F;
+    // 10 1 0 1 0 0 1 0 1 [imm7] [Rt2] [Rn=SP(31)] [Rt1]
+    let insn: u32 = 0xA9400000 | (imm7 << 15) | ((rt2 as u32) << 10) | (31 << 5) | (rt1 as u32);
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+/// STP Qt1, Qt2, [SP, #imm7*16]
+#[cfg(target_arch = "aarch64")]
+fn emit_stp_q(code: &mut Vec<u8>, rt1: u8, rt2: u8, offset: i16) {
+    let imm7 = ((offset / 16) as u32) & 0x7F;
+    // 10 1 0 1 1 0 0 1 0 0 [imm7] [Rt2] [Rn=SP(31)] [Rt1]
+    let insn: u32 = 0xAD000000 | (imm7 << 15) | ((rt2 as u32) << 10) | (31 << 5) | (rt1 as u32);
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+/// LDP Qt1, Qt2, [SP, #imm7*16]
+#[cfg(target_arch = "aarch64")]
+fn emit_ldp_q(code: &mut Vec<u8>, rt1: u8, rt2: u8, offset: i16) {
+    let imm7 = ((offset / 16) as u32) & 0x7F;
+    // 10 1 0 1 1 0 1 0 1 [imm7] [Rt2] [Rn=SP(31)] [Rt1]
+    let insn: u32 = 0xAD400000 | (imm7 << 15) | ((rt2 as u32) << 10) | (31 << 5) | (rt1 as u32);
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+/// Load a 64-bit immediate into register Xd using MOVZ + MOVK sequence.
+/// Uses 2-4 instructions depending on the value.
+#[cfg(target_arch = "aarch64")]
+fn emit_mov_x_imm64(code: &mut Vec<u8>, rd: u8, val: u64) {
+    let reg: [bool; 5] = u8_to_bits::<5>(rd);
+    let movz = emit_movz_from_address(val, 0, true, u8_to_bits::<2>(0), reg);
+    code.extend_from_slice(&bool_array_to_u32(movz).to_le_bytes());
+
+    let movk1 = emit_movk_from_address(val, 16, true, u8_to_bits::<2>(1), reg);
+    code.extend_from_slice(&bool_array_to_u32(movk1).to_le_bytes());
+
+    let movk2 = emit_movk_from_address(val, 32, true, u8_to_bits::<2>(2), reg);
+    code.extend_from_slice(&bool_array_to_u32(movk2).to_le_bytes());
+
+    let movk3 = emit_movk_from_address(val, 48, true, u8_to_bits::<2>(3), reg);
+    code.extend_from_slice(&bool_array_to_u32(movk3).to_le_bytes());
+}
+
+/// BLR Xn (Branch with Link to Register)
+#[cfg(target_arch = "aarch64")]
+fn emit_blr(code: &mut Vec<u8>, rn: u8) {
+    // 1101011 0 0 01 11111 0000 0 0 [Rn] 00000
+    let insn: u32 = 0xD63F0000 | ((rn as u32) << 5);
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+/// MOV Xd, Xn (alias for ORR Xd, XZR, Xn)
+#[cfg(target_arch = "aarch64")]
+fn emit_mov_reg(code: &mut Vec<u8>, rd: u8, rn: u8) {
+    // 1 01 01010 00 0 [Rm] 000000 11111 [Rd]
+    let insn: u32 = 0xAA0003E0 | ((rn as u32) << 16) | (rd as u32);
+    code.extend_from_slice(&insn.to_le_bytes());
+}
+
+// ============================================================================
 // x86_64 Dispatcher JIT Code Generation
 // ============================================================================
 
+#[cfg(target_arch = "x86_64")]
 /// Generate a branch instruction from `from` to `to`.
 fn generate_branch_to_dispatcher(from: usize, to: usize) -> Vec<u8> {
     let offset = to as isize - (from as isize + 5);
@@ -272,6 +767,7 @@ fn generate_branch_to_dispatcher(from: usize, to: usize) -> Vec<u8> {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 /// Generate the dispatcher JIT code for x86_64.
 ///
 /// The dispatcher:
@@ -305,6 +801,7 @@ fn generate_dispatcher_jit(
 
 /// Windows x64 calling convention dispatcher.
 /// Integer args: rcx, rdx, r8, r9. Float args: xmm0-xmm3.
+#[cfg(target_arch = "x86_64")]
 #[cfg(target_os = "windows")]
 fn generate_dispatcher_windows(
     method_key: usize,
@@ -369,6 +866,7 @@ fn generate_dispatcher_windows(
 
 /// System V AMD64 ABI dispatcher (Linux, macOS).
 /// Integer args: rdi, rsi, rdx, rcx, r8, r9. Float args: xmm0-xmm7.
+#[cfg(target_arch = "x86_64")]
 #[cfg(not(target_os = "windows"))]
 fn generate_dispatcher_sysv(
     method_key: usize,
@@ -448,6 +946,7 @@ fn generate_dispatcher_sysv(
 // Trampoline: copies original function bytes + appends jump back
 // ============================================================================
 
+#[cfg(target_arch = "x86_64")]
 /// Create a trampoline for the original function.
 ///
 /// The trampoline contains the original function's first N bytes (instruction-aligned,
@@ -517,6 +1016,7 @@ fn create_trampoline(func_addr: *mut u8, _method_key: usize) -> (*mut u8, usize,
     (trampoline, trampoline_total, copy_size)
 }
 
+#[cfg(target_arch = "x86_64")]
 /// Adjust RIP-relative displacements in trampoline instructions so they
 /// point to the same absolute targets as the original instructions.
 ///
@@ -603,6 +1103,7 @@ fn fixup_rip_relative_instructions(
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 /// Find the byte offset of the disp32 field in a RIP-relative instruction.
 /// Returns None if the instruction doesn't use RIP-relative addressing.
 fn find_rip_relative_disp_offset(insn: &[u8], _insn_len: usize) -> Option<usize> {
@@ -665,6 +1166,7 @@ fn find_rip_relative_disp_offset(insn: &[u8], _insn_len: usize) -> Option<usize>
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 /// Skip legacy prefixes and REX prefix, return the position of the opcode byte.
 fn skip_prefixes(code: &[u8]) -> usize {
     let mut pos = 0;
@@ -688,6 +1190,7 @@ fn skip_prefixes(code: &[u8]) -> usize {
 // Minimal x86_64 instruction length decoder
 // ============================================================================
 
+#[cfg(target_arch = "x86_64")]
 /// Find the first instruction boundary at or after `min_bytes`.
 fn find_instruction_boundary(code: &[u8], min_bytes: usize) -> usize {
     let mut offset = 0;
@@ -702,6 +1205,7 @@ fn find_instruction_boundary(code: &[u8], min_bytes: usize) -> usize {
     offset
 }
 
+#[cfg(target_arch = "x86_64")]
 /// Returns the byte-length of the x86_64 instruction starting at `code[0]`.
 /// Returns 0 if the instruction cannot be decoded.
 fn x86_64_insn_len(code: &[u8]) -> usize {
@@ -918,6 +1422,7 @@ fn x86_64_insn_len(code: &[u8]) -> usize {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 /// Decode the byte-length contribution of a ModR/M byte (including SIB and displacement).
 fn modrm_len(code: &[u8]) -> usize {
     if code.is_empty() {
@@ -967,6 +1472,7 @@ fn modrm_len(code: &[u8]) -> usize {
 // Helper functions
 // ============================================================================
 
+#[allow(dead_code)] // Used by x86_64 trampoline creation; not needed on ARM64
 unsafe fn clear_cache_ptr(ptr: *mut u8, size: usize) {
     #[cfg(target_os = "windows")]
     {
@@ -977,6 +1483,17 @@ unsafe fn clear_cache_ptr(ptr: *mut u8, size: usize) {
     #[cfg(target_os = "linux")]
     {
         __clear_cache(ptr, ptr.add(size));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        crate::injector_core::macosapi::sys_icache_invalidate(ptr, size);
+    }
+
+    // Synchronize the instruction pipeline on ARM64.
+    #[cfg(target_arch = "aarch64")]
+    {
+        core::arch::asm!("dsb sy", "isb", options(nostack, nomem));
     }
 }
 

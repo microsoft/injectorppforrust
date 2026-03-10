@@ -103,9 +103,11 @@ jobs:
       - name: Test (other targets)
         if: matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'thumbv7neon-unknown-linux-gnueabihf'
         shell: bash
+        env:
+          RUST_BACKTRACE: full
         run: |
           if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" && "${{ matrix.os }}" == "ubuntu-latest" ]]; then
             echo "skip"
           else
-            cargo test --target ${{ matrix.target }} -- --nocapture
+            cargo test --target ${{ matrix.target }} --tests -- --nocapture
           fi
