@@ -155,6 +155,40 @@ pub(crate) extern "C" fn get_thread_target(method_key: usize, default_target: us
     }
 }
 
+/// Check if a new ARM32 patch would overlap with any actively-used patch.
+///
+/// Only checks entries with ref_count > 0 (functions currently being faked).
+/// Inactive entries (ref_count == 0) are skipped — their dispatchers are permanent
+/// but their patches can safely be overwritten since no thread routes through them.
+#[cfg(target_arch = "arm")]
+fn check_arm32_patch_overlap(
+    func_addr: *mut u8,
+    registry: &HashMap<usize, MethodEntry>,
+) {
+    let clean_addr = (func_addr as usize) & !1;
+    let patch_size = 4; // minimum patch size on ARM32
+
+    for entry in registry.values() {
+        if entry.ref_count == 0 {
+            continue;
+        }
+        let existing_start = entry.func_ptr as usize;
+        let existing_end = existing_start + entry.patch_size;
+        let new_start = clean_addr;
+        let new_end = new_start + patch_size;
+
+        if new_start < existing_end && existing_start < new_end && new_start != existing_start {
+            panic!(
+                "injectorpp: Cannot patch function at {:#x} — its {}-byte patch would overlap \
+                 with an existing patched function at {:#x} ({} bytes). On ARM32 Thumb, functions \
+                 must be at least {} bytes to support thread-local dispatch. Consider adding \
+                 `std::hint::black_box(())` to increase function size.",
+                clean_addr, patch_size, existing_start, entry.patch_size, patch_size
+            );
+        }
+    }
+}
+
 /// Register a thread-local replacement for a function.
 ///
 /// If this is the first replacement for this function, installs the dispatcher infrastructure
@@ -182,6 +216,9 @@ pub(crate) fn register_replacement(
 
     {
         let mut registry = REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+
+        #[cfg(target_arch = "arm")]
+        check_arm32_patch_overlap(func_addr, &registry);
 
         let entry = registry
             .entry(method_key)
@@ -755,6 +792,47 @@ fn emit_mov_reg(code: &mut Vec<u8>, rd: u8, rn: u8) {
 // ARM32 Dispatcher JIT Code Generation
 // ============================================================================
 
+/// Determine the number of bytes to copy for a Thumb trampoline.
+///
+/// Scans Thumb instructions at `func_addr` until at least `min_bytes` have been
+/// covered, stopping at a complete instruction boundary. This prevents splitting
+/// a 32-bit Thumb instruction across the trampoline/original code boundary.
+///
+/// Panics if the function starts with a return instruction (BX LR) and is too
+/// small for the required patch size.
+#[cfg(target_arch = "arm")]
+fn calculate_thumb_copy_size(func_addr: *mut u8, min_bytes: usize) -> usize {
+    // Check if the function starts with BX LR (0x4770) — a 2-byte function
+    let first_hw = unsafe {
+        u16::from_le_bytes([func_addr.read(), func_addr.add(1).read()])
+    };
+    if first_hw == 0x4770 && min_bytes > 2 {
+        panic!(
+            "injectorpp: Function at {:#x} is only 2 bytes (BX LR), too small for \
+             the {}-byte patch required by thread-local dispatch. Add code to the \
+             function body (e.g., `let _ = std::hint::black_box(0u32);`) to increase \
+             its compiled size.",
+            func_addr as usize, min_bytes
+        );
+    }
+
+    let mut offset = 0;
+    while offset < min_bytes {
+        let hw = unsafe {
+            let ptr = func_addr.add(offset);
+            u16::from_le_bytes([ptr.read(), ptr.add(1).read()])
+        };
+        // 32-bit Thumb instructions have bits [15:11] = 11101, 11110, or 11111
+        let prefix = hw >> 11;
+        if prefix >= 0b11101 {
+            offset += 4;
+        } else {
+            offset += 2;
+        }
+    }
+    offset
+}
+
 #[cfg(target_arch = "arm")]
 fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntry {
     // Detect if function is Thumb mode (LSB of original address was set)
@@ -777,14 +855,17 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
     let max_b_range = if is_thumb { 16 * 1024 * 1024 } else { 32 * 1024 * 1024 };
     let patch_size = if distance < max_b_range { 4 } else { 12 };
 
-    eprintln!(
-        "[arm32-diag] install_dispatcher: func={:#x} clean={:#x} disp={:#x} dist={:#x} thumb={} patch={}",
-        func_addr as usize, func_addr_clean as usize, dispatcher_addr, distance, is_thumb, patch_size
-    );
+    // Step 3: Calculate the trampoline copy size. For Thumb, we must copy
+    // complete instructions (the patch boundary might fall in the middle of a
+    // 32-bit Thumb instruction). For ARM, all instructions are 4 bytes.
+    let copy_size = if is_thumb {
+        calculate_thumb_copy_size(func_addr_clean, patch_size)
+    } else {
+        patch_size
+    };
 
-    // Step 3: Create trampoline (copies patch_size bytes of original code)
     let (trampoline, trampoline_size) =
-        create_trampoline_arm32(func_addr_clean, patch_size, is_thumb);
+        create_trampoline_arm32(func_addr_clean, copy_size, is_thumb);
     let trampoline_addr = trampoline as usize | (if is_thumb { 1 } else { 0 });
 
     // Step 4: Build and write dispatcher code.
@@ -924,12 +1005,20 @@ fn create_trampoline_arm32(
     let jump_back_target = func_addr as u32 + copy_size as u32;
 
     if is_thumb {
-        // Thumb mode: LDR.W r12, [pc, #4]; BX r12; NOP; .word target
-        // LDR.W r12, [pc, #4]: F8DF C004 → stored as [0xDF, 0xF8, 0x04, 0xC0]
-        buf[copy_size] = 0xDF;
-        buf[copy_size + 1] = 0xF8;
-        buf[copy_size + 2] = 0x04;
-        buf[copy_size + 3] = 0xC0;
+        // Thumb mode: LDR.W r12, [pc, #N]; BX r12; NOP; .word target
+        // The LDR.W PC-relative offset must account for Thumb's Align(PC, 4) rule.
+        // PC = instruction_addr + 4, then aligned: Align(PC, 4).
+        let ldr_addr = trampoline as usize + copy_size;
+        let pc = ldr_addr + 4;
+        let aligned_pc = pc & !3;
+        let literal_addr = trampoline as usize + copy_size + 8;
+        let ldr_offset = (literal_addr - aligned_pc) as u16;
+
+        // LDR.W r12, [pc, #ldr_offset]: hw1=0xF8DF, hw2=0xC000|offset
+        let hw1: u16 = 0xF8DF;
+        let hw2: u16 = 0xC000 | ldr_offset;
+        buf[copy_size..copy_size + 2].copy_from_slice(&hw1.to_le_bytes());
+        buf[copy_size + 2..copy_size + 4].copy_from_slice(&hw2.to_le_bytes());
         // BX r12: 4760
         buf[copy_size + 4] = 0x60;
         buf[copy_size + 5] = 0x47;
@@ -1061,29 +1150,6 @@ fn generate_branch_patch_arm32(
 
             let hw1: u16 = 0xF000 | (s << 10) | imm10;
             let hw2: u16 = 0x9000 | (j1 << 13) | (j2 << 11) | imm11;
-
-            eprintln!(
-                "[arm32-diag] B.W: src={:#x} target={:#x} offset={} hw1={:#06x} hw2={:#06x}",
-                src_addr, target_addr, offset, hw1, hw2
-            );
-
-            // Verify decode: reconstruct offset from encoded values
-            let dec_s = ((hw1 >> 10) & 1) as i32;
-            let dec_imm10 = (hw1 & 0x3FF) as i32;
-            let dec_j1 = ((hw2 >> 13) & 1) as i32;
-            let dec_j2 = ((hw2 >> 11) & 1) as i32;
-            let dec_imm11 = (hw2 & 0x7FF) as i32;
-            let dec_i1 = (!(dec_j1 ^ dec_s)) & 1;
-            let dec_i2 = (!(dec_j2 ^ dec_s)) & 1;
-            let dec_imm_raw = (dec_s << 23) | (dec_i1 << 22) | (dec_i2 << 21) | (dec_imm10 << 11) | dec_imm11;
-            let dec_imm_signed = if dec_s != 0 { dec_imm_raw | !0x00FFFFFF } else { dec_imm_raw };
-            let dec_offset = dec_imm_signed << 1;
-            let dec_target = (src_addr as i32 + 4 + dec_offset) as usize;
-            eprintln!(
-                "[arm32-diag] B.W verify: decoded_offset={} decoded_target={:#x} expected={:#x} match={}",
-                dec_offset, dec_target, target_addr, dec_target == target_addr
-            );
-            assert_eq!(dec_target, target_addr, "B.W encoding mismatch");
 
             let mut patch = vec![0u8; 4];
             patch[0..2].copy_from_slice(&hw1.to_le_bytes());
