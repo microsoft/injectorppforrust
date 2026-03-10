@@ -469,9 +469,13 @@ fn create_trampoline_aarch64(
     // Fix up PC-relative instructions in the buffer (using trampoline's target address)
     fixup_aarch64_pc_relative_buf(&mut buf, trampoline, func_addr, copy_size);
 
-    // Append absolute jump back to original + copy_size
+    // Append absolute jump back to original + copy_size.
+    // Use x17 (IP1) instead of x16 (IP0) because the copied instructions may use x16
+    // (e.g., Windows ARM64 import thunks start with ADRP x16). The jump-back must not
+    // clobber registers set by the copied instructions before they're consumed by the
+    // original code at func_addr + copy_size.
     let jump_back_target = (func_addr as usize + copy_size) as u64;
-    let reg: [bool; 5] = u8_to_bits::<5>(16); // x16 (IP0) scratch register
+    let reg: [bool; 5] = u8_to_bits::<5>(17); // x17 (IP1) scratch register
 
     let instrs: [u32; 5] = [
         bool_array_to_u32(emit_movz_from_address(
