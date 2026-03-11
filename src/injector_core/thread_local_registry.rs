@@ -1431,7 +1431,12 @@ fn create_trampoline(func_addr: *mut u8, _method_key: usize) -> (*mut u8, usize,
 
     // The jump-back uses jmp [rip+0] + 8-byte address = 14 bytes
     let jump_back_size = 14;
-    let trampoline_total = copy_size + jump_back_size;
+    // Reserve extra space for indirect call/jmp stubs. When a CALL/JMP rel32
+    // in the copied code targets a function that's too far from the trampoline
+    // for a 32-bit displacement, we emit a `MOV RAX, imm64; JMP RAX` stub
+    // (12 bytes each). 64 bytes handles up to 5 such overflow cases.
+    let stub_space = 64;
+    let trampoline_total = copy_size + jump_back_size + stub_space;
 
     // Allocate executable memory for the trampoline (near original for ±2GB reach)
     let near_src =
@@ -1448,7 +1453,16 @@ fn create_trampoline(func_addr: *mut u8, _method_key: usize) -> (*mut u8, usize,
     // instruction's position. After copying to the trampoline at a different address,
     // we must adjust disp32 so it still points to the same absolute target.
     let delta = func_addr as isize - trampoline as isize;
-    fixup_rip_relative_instructions(trampoline, &original_code, copy_size, delta);
+    let stub_start = copy_size + jump_back_size;
+    fixup_rip_relative_instructions(
+        trampoline,
+        &original_code,
+        copy_size,
+        delta,
+        func_addr,
+        stub_start,
+        trampoline_total,
+    );
 
     // Append jump back to original + copy_size
     // Using: jmp [rip+0] (FF 25 00 00 00 00) + 8-byte target address
@@ -1489,13 +1503,26 @@ fn create_trampoline(func_addr: *mut u8, _method_key: usize) -> (*mut u8, usize,
 /// and the coverage counter is too far from the trampoline for a 32-bit
 /// displacement. NOP-ing the counter increment is safe — it only affects
 /// profiling accuracy, not functional behavior.
+///
+/// For CALL/JMP rel32 overflow, NOP-ing would break program logic (the callee
+/// never executes, so its side effects and return value are lost). Instead,
+/// we emit an indirect stub at the end of the trampoline:
+///   `MOV RAX, <absolute_target>; JMP RAX` (12 bytes)
+/// and rewrite the CALL/JMP to target the stub. The stub preserves CALL
+/// semantics: `CALL stub` pushes the return address, then `JMP target`
+/// transfers control; when the callee returns, execution resumes in the
+/// trampoline right after the CALL.
 fn fixup_rip_relative_instructions(
     trampoline: *mut u8,
     original_code: &[u8],
     copy_size: usize,
     delta: isize,
+    func_addr: *mut u8,
+    stub_start: usize,
+    trampoline_alloc_size: usize,
 ) {
     let mut offset = 0;
+    let mut stub_cursor = stub_start;
     while offset < copy_size {
         let insn = &original_code[offset..];
         let insn_len = x86_64_insn_len(insn);
@@ -1512,7 +1539,9 @@ fn fixup_rip_relative_instructions(
                 if new_disp >= i32::MIN as i64 && new_disp <= i32::MAX as i64 {
                     disp_ptr.write_unaligned(new_disp as i32);
                 } else {
-                    // Overflow: NOP out the entire instruction in the trampoline
+                    // Overflow: NOP out the entire instruction in the trampoline.
+                    // This is safe for coverage/profiling counter increments
+                    // (lock inc [rip+disp32]) which don't affect program logic.
                     for i in 0..insn_len {
                         *trampoline.add(offset + i) = 0x90; // NOP
                     }
@@ -1533,10 +1562,38 @@ fn fixup_rip_relative_instructions(
                     if new_rel >= i32::MIN as i64 && new_rel <= i32::MAX as i64 {
                         rel_ptr.write_unaligned(new_rel as i32);
                     } else {
-                        // Overflow: NOP out the entire instruction
-                        for i in 0..insn_len {
-                            *trampoline.add(offset + i) = 0x90;
-                        }
+                        // Overflow: emit an indirect stub and redirect the CALL/JMP.
+                        // Calculate the absolute target address from the original code.
+                        let rip_after_insn =
+                            func_addr as usize + offset + insn_len;
+                        let absolute_target =
+                            (rip_after_insn as i64 + old_rel as i64) as u64;
+
+                        assert!(
+                            stub_cursor + 12 <= trampoline_alloc_size,
+                            "Trampoline stub space exhausted (too many CALL/JMP rel32 overflows)"
+                        );
+
+                        // Write stub: MOV RAX, imm64 (48 B8 + 8 bytes) + JMP RAX (FF E0)
+                        let stub_ptr = trampoline.add(stub_cursor);
+                        *stub_ptr = 0x48; // REX.W
+                        *stub_ptr.add(1) = 0xB8; // MOV RAX, imm64
+                        std::ptr::copy_nonoverlapping(
+                            absolute_target.to_le_bytes().as_ptr(),
+                            stub_ptr.add(2),
+                            8,
+                        );
+                        *stub_ptr.add(10) = 0xFF; // JMP RAX
+                        *stub_ptr.add(11) = 0xE0;
+
+                        // Rewrite the CALL/JMP in the trampoline to target the stub.
+                        // new_rel = stub_addr - rip_after_insn_in_trampoline
+                        let rip_in_trampoline = trampoline as usize + offset + insn_len;
+                        let stub_rel =
+                            (trampoline as usize + stub_cursor) as i64 - rip_in_trampoline as i64;
+                        rel_ptr.write_unaligned(stub_rel as i32);
+
+                        stub_cursor += 12;
                     }
                 }
             }
@@ -1552,9 +1609,13 @@ fn fixup_rip_relative_instructions(
                         if new_rel >= i32::MIN as i64 && new_rel <= i32::MAX as i64 {
                             rel_ptr.write_unaligned(new_rel as i32);
                         } else {
-                            for i in 0..insn_len {
-                                *trampoline.add(offset + i) = 0x90;
-                            }
+                            // Jcc overflow is extremely rare in function prologues.
+                            // Panic rather than silently breaking control flow.
+                            panic!(
+                                "Jcc rel32 displacement overflow in trampoline fixup \
+                                 (function at {:p}, offset {}). This case is not yet handled.",
+                                func_addr, offset
+                            );
                         }
                     }
                 }
