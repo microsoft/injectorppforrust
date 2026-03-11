@@ -99,7 +99,7 @@ jobs:
           PKG_CONFIG_PATH: /usr/lib/arm-linux-gnueabihf/pkgconfig
           RUST_BACKTRACE: full
         run: |
-          cargo test -j 1 --target ${{ matrix.target }} --tests -- --nocapture --test-threads=1
+          cargo test --target ${{ matrix.target }} --tests -- --nocapture
 
       - name: Test (other targets)
         if: matrix.target != 'armv7-unknown-linux-gnueabihf' && matrix.target != 'thumbv7neon-unknown-linux-gnueabihf'
