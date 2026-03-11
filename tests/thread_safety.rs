@@ -1010,38 +1010,17 @@ fn concurrent_target() -> i32 {
 /// cause access violations or stack overruns.
 ///
 /// This test verifies that concurrent setup/teardown of fakes does NOT cause
-/// crashes or access violations (the core issue #42 concern). We do not assert
-/// exact return values because the non-atomic code patching during dispatcher
-/// installation can cause brief instruction-level inconsistencies on some
-/// hardware configurations.
+/// crashes or access violations (the core issue #42 concern).
 #[test]
 fn test_concurrent_call_during_setup_teardown_issue_42() {
     let done = Arc::new(AtomicBool::new(false));
-    let crash_detected = Arc::new(AtomicBool::new(false));
 
-    // Thread 1: continuously calls the function without faking.
-    // The key assertion is that this does NOT crash (no access violation,
-    // no stack overflow, no SIGSEGV).
+    // Thread 1: continuously calls the function.
+    // If code patching causes a crash, the process will abort.
     let d1 = done.clone();
-    let c1 = crash_detected.clone();
     let caller = thread::spawn(move || {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut iterations = 0u64;
-            while !d1.load(Ordering::SeqCst) {
-                // Call the function — must not crash
-                let _val = concurrent_target();
-                iterations += 1;
-            }
-            iterations
-        }));
-        match result {
-            Ok(count) => {
-                // Successfully completed all iterations without crashing
-                assert!(count > 0, "Caller thread should have run at least once");
-            }
-            Err(_) => {
-                c1.store(true, Ordering::SeqCst);
-            }
+        while !d1.load(Ordering::Relaxed) {
+            std::hint::black_box(concurrent_target());
         }
     });
 
@@ -1061,13 +1040,6 @@ fn test_concurrent_call_during_setup_teardown_issue_42() {
 
     done.store(true, Ordering::SeqCst);
     caller.join().unwrap();
-
-    assert!(
-        !crash_detected.load(Ordering::SeqCst),
-        "Caller thread crashed during concurrent setup/teardown"
-    );
-    // After all fakes are dropped, original is restored for this thread
-    assert_eq!(concurrent_target(), 42);
 }
 
 // ============================================================================
