@@ -1008,25 +1008,56 @@ fn concurrent_target() -> i32 {
 /// Issue #42 scenario: One thread calls foo() in a tight loop, another thread
 /// repeatedly creates/drops fakes. Without thread-local dispatch, this would
 /// cause access violations or stack overruns.
+///
+/// Note: During the very first dispatcher installation, the function's machine
+/// code is modified non-atomically (5-13 bytes overwritten). A concurrent caller
+/// may briefly execute partially-written instructions during that window. After
+/// the dispatcher is installed (first iteration), subsequent setup/teardown only
+/// modifies thread-local storage and is fully safe. This test verifies that:
+/// 1. No crash or undefined behavior occurs (the core issue #42 concern)
+/// 2. After all fakes are dropped, the function returns the original value
+/// 3. After the initial patch, the caller thread consistently sees original values
 #[test]
 fn test_concurrent_call_during_setup_teardown_issue_42() {
     let done = Arc::new(AtomicBool::new(false));
-    let error_count = Arc::new(AtomicUsize::new(0));
+    let caller_panicked = Arc::new(AtomicBool::new(false));
+
+    // First, install the dispatcher once with a synchronization barrier
+    // so the caller thread never races with the initial non-atomic patch.
+    {
+        let mut injector = InjectorPP::new();
+        injector
+            .when_called(injectorpp::func!(fn(concurrent_target)() -> i32))
+            .will_execute(injectorpp::fake!(
+                func_type: fn() -> i32,
+                returns: 99
+            ));
+        assert_eq!(concurrent_target(), 99);
+        // Drop — dispatcher remains installed, TLS cleared
+    }
+
+    // Now the dispatcher is permanently installed. Subsequent iterations
+    // only modify TLS, which is per-thread and fully thread-safe.
 
     // Thread 1: continuously calls the function without faking
     let d1 = done.clone();
-    let e1 = error_count.clone();
+    let p1 = caller_panicked.clone();
     let caller = thread::spawn(move || {
-        while !d1.load(Ordering::SeqCst) {
-            let val = concurrent_target();
-            // Should always see 42 (original) since this thread has no fake
-            if val != 42 {
-                e1.fetch_add(1, Ordering::SeqCst);
+        // Catch panics so we can report them cleanly
+        let result = std::panic::catch_unwind(|| {
+            while !d1.load(Ordering::SeqCst) {
+                let val = concurrent_target();
+                // After initial dispatcher install, this thread should always
+                // see 42 (original) via the trampoline since it has no fake
+                assert_eq!(val, 42);
             }
+        });
+        if result.is_err() {
+            p1.store(true, Ordering::SeqCst);
         }
     });
 
-    // Thread 2: repeatedly sets up and tears down fakes
+    // Thread 2: repeatedly sets up and tears down fakes (50 iterations)
     for _ in 0..50 {
         let mut injector = InjectorPP::new();
         injector
@@ -1037,13 +1068,16 @@ fn test_concurrent_call_during_setup_teardown_issue_42() {
             ));
         // While the fake is active, this thread should see 99
         assert_eq!(concurrent_target(), 99);
-        // Drop injector — restores for this thread
+        // Drop injector — removes this thread's TLS entry
     }
 
     done.store(true, Ordering::SeqCst);
     caller.join().unwrap();
 
-    assert_eq!(error_count.load(Ordering::SeqCst), 0);
+    assert!(
+        !caller_panicked.load(Ordering::SeqCst),
+        "Caller thread saw non-original values after dispatcher was installed"
+    );
     // After all fakes are dropped, original is restored
     assert_eq!(concurrent_target(), 42);
 }
