@@ -6,15 +6,15 @@
 ///
 /// # Lifetime Safety
 ///
-/// When the function being faked involves references, you **must** specify the exact lifetimes
-/// in the type signature. Eliding or changing lifetimes can cause undefined behavior.
+/// When using the simplified `fn` syntax with a bare reference return type (e.g., `-> &str`),
+/// `func!` automatically applies a compile-time check that catches lifetime mismatches.
+/// This prevents undefined behavior from coercing `fn(&str) -> &'static str` into
+/// `fn(&str) -> &str` (see GitHub issue #73).
 ///
-/// For example, if a function returns `&'static str`, you must write `&'static str` in the
-/// type signature — not `&str` (which implies a lifetime linked to the input). Mismatched
-/// lifetimes allow the fake to return dangling references. See GitHub issue #73 for details.
-///
-/// Use [`verify_func!`] after `func!` to add a compile-time check that catches lifetime
-/// mismatches for functions whose return type is independent of input lifetimes.
+/// If your function genuinely returns a reference with a lifetime linked to its input
+/// (e.g., `fn(&str) -> &str`), add an explicit lifetime annotation to bypass the check:
+/// - `func!(fn (my_fn)(&str) -> &'_ str)` — explicitly linked to input lifetime
+/// - `func!(fn (my_fn)(&str) -> &'static str)` — explicitly static
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
@@ -27,7 +27,7 @@ macro_rules! func {
         unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
-    // Case 2: Non-generic function
+    // Case 2: Non-generic function with explicit type
     ($f:expr, $fn_type:ty) => {{
         let fn_val:$fn_type = $f;
         let ptr = fn_val as *const ();
@@ -37,76 +37,10 @@ macro_rules! func {
         unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
-    // Simplified fn with return
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> $ret)
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified fn with unit return
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, fn($($arg_ty),*))
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, fn($($arg_ty),*))
-    }};
-
-    // Simplified unsafe fn with return
-    (func_info: unsafe fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
-    }};
-
-    (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified unsafe fn with unit return
-    (func_info: unsafe fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
-    }};
-
-    (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
-    }};
-
-    // Simplified unsafe extern "C" fn with return
-    (func_info: unsafe extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
-    }};
-
-    (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified unsafe extern "C" fn with unit return
-    (func_info: unsafe extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
-    }};
-
-    (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
-    }};
-
-    // Simplified unsafe extern "system" fn with return
-    (func_info: unsafe extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> $ret)
-    }};
-
-    (unsafe{} extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified unsafe extern "system" fn with unit return
-    (func_info: unsafe extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> ())
-    }};
-
-    (unsafe{} extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> ())
+    // All simplified fn syntax patterns: delegate to proc macro for
+    // automatic lifetime safety checking.
+    ($($tt:tt)*) => {{
+        $crate::__func_checked!($($tt)*)
     }};
 }
 
