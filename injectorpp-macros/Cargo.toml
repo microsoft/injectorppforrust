@@ -1,0 +1,16 @@
+[package]
+name = "injectorpp-macros"
+version = "0.5.0"
+authors = ["Jingyu Ma <mazong1123us@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/microsoft/injectorppforrust"
+edition = "2021"
+description = "Proc macros for injectorpp - compile-time lifetime safety checks"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

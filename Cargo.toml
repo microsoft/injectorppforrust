@@ -12,6 +12,7 @@ description = "Injectorpp is a powerful tool designed to facilitate the writing 
 
 [dependencies]
 libc = "0.2"
+injectorpp-macros = { path = "injectorpp-macros" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mach2 = "0.5"

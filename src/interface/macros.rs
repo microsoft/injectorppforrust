@@ -3,6 +3,18 @@
 /// This macro handles both generic and non-generic functions:
 /// - For generic functions, provide the function name and type parameters separately: `func!(function_name, fn(Type1, Type2))`
 /// - For non-generic functions, simply provide the function: `func!(function_name, fn())`
+///
+/// # Lifetime Safety
+///
+/// When using the simplified `fn` syntax with a bare reference return type (e.g., `-> &str`),
+/// `func!` automatically applies a compile-time check that catches lifetime mismatches.
+/// This prevents undefined behavior from coercing `fn(&str) -> &'static str` into
+/// `fn(&str) -> &str` (see GitHub issue #73).
+///
+/// If your function genuinely returns a reference with a lifetime linked to its input
+/// (e.g., `fn(&str) -> &str`), add an explicit lifetime annotation to bypass the check:
+/// - `func!(fn (my_fn)(&str) -> &'_ str)` — explicitly linked to input lifetime
+/// - `func!(fn (my_fn)(&str) -> &'static str)` — explicitly static
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
@@ -10,97 +22,34 @@ macro_rules! func {
         let fn_val:$fn_type = $f::<$($gen),*>;
         let ptr = fn_val as *const ();
         let sig = std::any::type_name_of_val(&fn_val);
+        let type_id = std::any::TypeId::of::<$fn_type>();
 
-        unsafe { FuncPtr::new(ptr, sig) }
+        unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
-    // Case 2: Non-generic function
+    // Case 2: Non-generic function with explicit type
     ($f:expr, $fn_type:ty) => {{
         let fn_val:$fn_type = $f;
         let ptr = fn_val as *const ();
         let sig = std::any::type_name_of_val(&fn_val);
+        let type_id = std::any::TypeId::of::<$fn_type>();
 
-        unsafe { FuncPtr::new(ptr, sig) }
+        unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
-    // Simplified fn with return
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> $ret)
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified fn with unit return
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, fn($($arg_ty),*))
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, fn($($arg_ty),*))
-    }};
-
-    // Simplified unsafe fn with return
-    (func_info: unsafe fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
-    }};
-
-    (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified unsafe fn with unit return
-    (func_info: unsafe fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
-    }};
-
-    (unsafe{} fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe fn($($arg_ty),*) -> ())
-    }};
-
-    // Simplified unsafe extern "C" fn with return
-    (func_info: unsafe extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
-    }};
-
-    (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified unsafe extern "C" fn with unit return
-    (func_info: unsafe extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
-    }};
-
-    (unsafe{} extern "C" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "C" fn($($arg_ty),*) -> ())
-    }};
-
-    // Simplified unsafe extern "system" fn with return
-    (func_info: unsafe extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> $ret)
-    }};
-
-    (unsafe{} extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> $ret)
-    }};
-
-    // Simplified unsafe extern "system" fn with unit return
-    (func_info: unsafe extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> ())
-    }};
-
-    (unsafe{} extern "system" fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
-        $crate::func!($f, unsafe extern "system" fn($($arg_ty),*) -> ())
+    // All simplified fn syntax patterns: delegate to proc macro for
+    // automatic lifetime safety checking.
+    ($($tt:tt)*) => {{
+        $crate::__func_checked!($($tt)*)
     }};
 }
 
 /// Converts a function to a `FuncPtr`.
 ///
 /// This macro handles both generic and non-generic functions:
-/// - For generic functions, provide the function name and type parameters separately: `func!(function_name::<Type1, Type2>)`
-/// - For non-generic functions, simply provide the function: `func!(function_name)`
+/// - Generic function: `func_unchecked!(function_name::<Type1, Type2>)`
+/// - Non-generic function: `func_unchecked!(function_name)`
+/// - Simplified fn syntax: `func_unchecked!(fn (function_name)(ArgType) -> RetType)`
 ///
 /// # Safety
 ///
@@ -126,6 +75,16 @@ macro_rules! func_unchecked {
 
         FuncPtr::new(ptr, "")
     }};
+
+    // Case 3: Simplified fn syntax with return — skips lifetime check
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> $ret)
+    }};
+
+    // Case 4: Simplified fn syntax without return — skips lifetime check
+    (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, fn($($arg_ty),*))
+    }};
 }
 
 /// Converts a closure to a `FuncPtr`.
@@ -142,8 +101,9 @@ macro_rules! closure {
     ($closure:expr, $fn_type:ty) => {{
         let fn_val: $fn_type = $closure;
         let sig = std::any::type_name_of_val(&fn_val);
+        let type_id = std::any::TypeId::of::<$fn_type>();
 
-        unsafe { FuncPtr::new(fn_val as *const (), sig) }
+        unsafe { FuncPtr::new_with_type_id(fn_val as *const (), sig, type_id) }
     }};
 }
 
@@ -177,6 +137,12 @@ pub fn __assert_future_output<Fut, T>(_: &mut Fut)
 where
     Fut: std::future::Future<Output = T>,
 {
+}
+
+/// Helper to extract TypeId from a value's type. Used internally by macros.
+#[doc(hidden)]
+pub fn __type_id_of_val<T: 'static>(_: &T) -> std::any::TypeId {
+    std::any::TypeId::of::<T>()
 }
 
 /// Ensure the async function can be correctly used in injectorpp.
@@ -1363,5 +1329,59 @@ macro_rules! fake {
          let f: unsafe extern "system" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
          (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+    }};
+}
+
+/// Compile-time check that the specified function signature matches the function's actual type.
+///
+/// This macro catches lifetime mismatches that `func!` cannot detect on its own due to Rust's
+/// implicit function pointer subtyping. It uses type invariance (`&mut T`) to prevent coercion
+/// and will produce a compile error if the lifetimes don't match.
+///
+/// # When to use
+///
+/// Use this macro when faking functions that return references, especially `&'static` references.
+/// It prevents the common mistake of eliding `'static` (e.g., writing `&str` instead of
+/// `&'static str`), which can cause undefined behavior (see issue #73).
+///
+/// # Limitations
+///
+/// This macro only works for functions whose return type is **independent** of input lifetimes.
+/// It cannot be used with functions like `fn(&str) -> &str` where the output borrows from
+/// the input — use `func!` directly for those.
+///
+/// # Example
+///
+/// ```rust,compile_fail
+/// fn foo(_s: &str) -> &'static str { "abc" }
+///
+/// // This correctly fails to compile — the return type should be &'static str, not &str
+/// injectorpp::verify_func!(fn (foo)(&str) -> &str);
+/// ```
+///
+/// ```rust
+/// fn foo(_s: &str) -> &'static str { "abc" }
+///
+/// // This compiles — the return type correctly matches
+/// injectorpp::verify_func!(fn (foo)(&str) -> &'static str);
+/// ```
+#[macro_export]
+macro_rules! verify_func {
+    (fn ($func:expr)($($param:ty),*) -> $ret:ty) => {{
+        #[allow(non_snake_case)]
+        fn __injectorpp_infer_ret<__InjectorppRet>(
+            _f: fn($($param),*) -> __InjectorppRet,
+        ) -> fn($($param),*) -> __InjectorppRet {
+            _f
+        }
+        #[allow(non_snake_case)]
+        fn __injectorpp_must_match<__InjectorppT>(
+            _a: &mut __InjectorppT,
+            _b: &mut __InjectorppT,
+        ) {
+        }
+        let mut __injectorpp_natural = __injectorpp_infer_ret($func);
+        let mut __injectorpp_user: fn($($param),*) -> $ret = $func;
+        __injectorpp_must_match(&mut __injectorpp_natural, &mut __injectorpp_user);
     }};
 }
