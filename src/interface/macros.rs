@@ -6,15 +6,18 @@
 ///
 /// # Lifetime Safety
 ///
-/// When the function being faked involves references, you **must** specify the exact lifetimes
-/// in the type signature. Eliding or changing lifetimes can cause undefined behavior.
+/// When using the simplified `fn` syntax with a bare reference return type (e.g., `-> &str`),
+/// `func!` applies a compile-time check that catches lifetime mismatches. This prevents
+/// undefined behavior from coercing `fn(&str) -> &'static str` into `fn(&str) -> &str`.
 ///
-/// For example, if a function returns `&'static str`, you must write `&'static str` in the
-/// type signature — not `&str` (which implies a lifetime linked to the input). Mismatched
-/// lifetimes allow the fake to return dangling references. See GitHub issue #73 for details.
+/// If your function genuinely returns a reference with a lifetime linked to its input
+/// (e.g., `fn(&str) -> &str`), add an explicit lifetime annotation to bypass the check:
+/// - `func!(fn (my_fn)(&str) -> &'_ str)` — elided lifetime, linked to input
+/// - `func!(fn (my_fn)(&str) -> &'static str)` — static lifetime
 ///
-/// Use [`verify_func!`] after `func!` to add a compile-time check that catches some lifetime
-/// mismatches (works for functions whose return type is independent of input lifetimes).
+/// Alternatively, use [`func_unchecked!`] with the `fn` syntax to skip the check entirely.
+///
+/// See GitHub issue #73 for details on the underlying soundness problem.
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
@@ -37,7 +40,74 @@ macro_rules! func {
         unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
-    // Simplified fn with return
+    // Simplified fn with reference return that has an explicit lifetime (e.g., &'static, &'_).
+    // No invariance check — the user explicitly specified the lifetime.
+    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $lt:lifetime $ret_inner:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> &$lt $ret_inner)
+    }};
+
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $lt:lifetime $ret_inner:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> &$lt $ret_inner)
+    }};
+
+    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $lt:lifetime $ret_inner:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> &mut $lt $ret_inner)
+    }};
+
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $lt:lifetime $ret_inner:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> &mut $lt $ret_inner)
+    }};
+
+    // Simplified fn with bare reference return (no explicit lifetime).
+    // Applies compile-time invariance check to catch lifetime mismatches (issue #73).
+    // If the function's actual return lifetime differs from the elided lifetime,
+    // this produces a compile error. Use an explicit lifetime (e.g., `&'_ str` or
+    // `&'static str`) to bypass this check.
+    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $ret_inner:ty) => {{
+        {
+            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
+            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
+            let mut __a = __injpp_check_ret($f);
+            let mut __b: fn($($arg_ty),*) -> & $ret_inner = $f;
+            __injpp_eq(&mut __a, &mut __b);
+        }
+        $crate::func!($f, fn($($arg_ty),*) -> & $ret_inner)
+    }};
+
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $ret_inner:ty) => {{
+        {
+            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
+            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
+            let mut __a = __injpp_check_ret($f);
+            let mut __b: fn($($arg_ty),*) -> & $ret_inner = $f;
+            __injpp_eq(&mut __a, &mut __b);
+        }
+        $crate::func!($f, fn($($arg_ty),*) -> & $ret_inner)
+    }};
+
+    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $ret_inner:ty) => {{
+        {
+            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
+            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
+            let mut __a = __injpp_check_ret($f);
+            let mut __b: fn($($arg_ty),*) -> &mut $ret_inner = $f;
+            __injpp_eq(&mut __a, &mut __b);
+        }
+        $crate::func!($f, fn($($arg_ty),*) -> &mut $ret_inner)
+    }};
+
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $ret_inner:ty) => {{
+        {
+            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
+            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
+            let mut __a = __injpp_check_ret($f);
+            let mut __b: fn($($arg_ty),*) -> &mut $ret_inner = $f;
+            __injpp_eq(&mut __a, &mut __b);
+        }
+        $crate::func!($f, fn($($arg_ty),*) -> &mut $ret_inner)
+    }};
+
+    // Simplified fn with return (catch-all for non-reference return types)
     (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, fn($($arg_ty),*) -> $ret)
     }};
@@ -110,19 +180,21 @@ macro_rules! func {
     }};
 }
 
-/// Converts a function to a `FuncPtr`.
+/// Converts a function to a `FuncPtr` without lifetime safety checks.
 ///
-/// This macro handles both generic and non-generic functions:
-/// - For generic functions, provide the function name and type parameters separately: `func!(function_name::<Type1, Type2>)`
-/// - For non-generic functions, simply provide the function: `func!(function_name)`
+/// This macro supports the same syntax as [`func!`]:
+/// - Generic function: `func_unchecked!(function_name::<Type1, Type2>)`
+/// - Non-generic function: `func_unchecked!(function_name)`
+/// - Simplified fn syntax: `func_unchecked!(fn (function_name)(ArgType) -> RetType)`
+///
+/// Use this when `func!` produces a false-positive compile error for functions
+/// with linked-lifetime returns (e.g., `fn(&str) -> &str`).
 ///
 /// # Safety
 ///
-/// This macro uses unsafe code internally and comes with the following requirements:
-/// - The function pointer must remain valid for the entire duration it's used by injectorpp
-/// - The function signature must match exactly what the injectorpp expects at runtime
-/// - Mismatched function signatures will lead to undefined behavior or memory corruption
-/// - Function pointers created with this macro should only be used with the appropriate injectorpp APIs
+/// This macro skips the compile-time lifetime check. The caller must ensure
+/// the function signature exactly matches the function being mocked.
+/// Mismatched lifetimes will lead to undefined behavior.
 #[macro_export]
 macro_rules! func_unchecked {
     // Case 1: Generic function — provide function name and types separately
@@ -139,6 +211,16 @@ macro_rules! func_unchecked {
         let ptr = fn_val as *const ();
 
         FuncPtr::new(ptr, "")
+    }};
+
+    // Case 3: Simplified fn syntax with return — skips lifetime check
+    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
+        $crate::func!($f, fn($($arg_ty),*) -> $ret)
+    }};
+
+    // Case 4: Simplified fn syntax without return — skips lifetime check
+    (fn ( $f:expr ) ( $($arg_ty:ty),* )) => {{
+        $crate::func!($f, fn($($arg_ty),*))
     }};
 }
 
@@ -304,7 +386,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns (no times).
     (
@@ -324,7 +406,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times, but no assign.
     (
@@ -349,7 +431,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns (no times, no assign).
     (
@@ -367,7 +449,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     (
         func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
@@ -384,7 +466,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns and times
     (
@@ -410,7 +492,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -429,7 +511,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times and returns
     (
@@ -453,7 +535,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns only.
     (
@@ -470,7 +552,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     (
         func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
@@ -486,7 +568,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === UNIT RETURNING FUNCTIONS (-> ()) ===
@@ -514,7 +596,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -537,7 +619,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -555,7 +637,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
@@ -572,7 +654,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -597,7 +679,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -619,7 +701,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -631,7 +713,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === NORMAL UNSAFE NON-UNIT RETURNING FUNCTIONS ===
@@ -650,7 +732,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns and times for unsafe fn
     (
@@ -674,7 +756,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns for unsafe fn
     (
@@ -693,7 +775,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns, and times for unsafe fn
     (
@@ -719,7 +801,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === NORMAL UNSAFE UNIT RETURNING FUNCTIONS ===
     // With times for unsafe fn
@@ -742,7 +824,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
@@ -759,7 +841,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -784,7 +866,7 @@ macro_rules! fake {
          }
          let f: unsafe fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // Without times for unsafe fn
     (
@@ -796,7 +878,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === EXTERN "C" NON-UNIT RETURNING FUNCTIONS ===
@@ -825,7 +907,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns
     (
@@ -845,7 +927,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times
     (
@@ -870,7 +952,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns, and times
     (
@@ -896,7 +978,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -915,7 +997,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns and times
     (
@@ -939,7 +1021,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === EXTERN "C" UNIT RETURNING FUNCTIONS ===
     // With when, assign, and times
@@ -965,7 +1047,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -988,7 +1070,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -1006,7 +1088,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
@@ -1023,7 +1105,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -1048,7 +1130,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -1070,7 +1152,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -1082,7 +1164,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === EXTERN "system" NON-UNIT RETURNING FUNCTIONS ===
     // With when, assign, returns, and times.
@@ -1110,7 +1192,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns
     (
@@ -1130,7 +1212,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times
     (
@@ -1155,7 +1237,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns, and times
     (
@@ -1181,7 +1263,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -1200,7 +1282,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns and times
     (
@@ -1224,7 +1306,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     (
         func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
@@ -1240,7 +1322,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === EXTERN "system" UNIT RETURNING FUNCTIONS ===
     // With when, assign, and times
@@ -1266,7 +1348,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -1289,7 +1371,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -1307,7 +1389,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
@@ -1324,7 +1406,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -1349,7 +1431,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "system" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -1371,7 +1453,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "system" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
@@ -1383,7 +1465,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "system" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new_with_type_id(raw_ptr, std::any::type_name_of_val(&f), __type_id_of_val(&f)) }, verifier)
+         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 }
 
