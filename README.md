@@ -54,8 +54,11 @@ This approach eliminates the need to make a trait solely for testing purposes. I
 
 # Supported Platform
 
-- OS: Linux, macOS, and Windows
-- Arch: arm64, arm32, and amd64
+| OS | Arch |
+| --- | --- |
+| Linux | arm64, arm32, amd64 |
+| macOS | arm64 |
+| Windows | arm64, amd64 |
 
 # Usage
 
