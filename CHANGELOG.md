@@ -1,3 +1,14 @@
+# 0.5.0 (March 15, 2026)
+
+- Add macOS support.
+- Add ARM32 (armv7/thumbv7) support.
+- Add thread-local dispatch for parallel test execution on x86_64, ARM64, and ARM32.
+- Add macro to support unsafe system function.
+- Add feature to prevent injectorpp instance creation.
+- Improve error message for fake function called time and arguments mismatch.
+- Fix JIT allocation range restriction to AArch64 only.
+- Fix test failure on x86-64 Windows by adding static lifetime.
+
 # 0.4.0 (June 23, 2025)
 
 - Introduce type check for major APIs.
