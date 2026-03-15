@@ -6,18 +6,15 @@
 ///
 /// # Lifetime Safety
 ///
-/// When using the simplified `fn` syntax with a bare reference return type (e.g., `-> &str`),
-/// `func!` applies a compile-time check that catches lifetime mismatches. This prevents
-/// undefined behavior from coercing `fn(&str) -> &'static str` into `fn(&str) -> &str`.
+/// When the function being faked involves references, you **must** specify the exact lifetimes
+/// in the type signature. Eliding or changing lifetimes can cause undefined behavior.
 ///
-/// If your function genuinely returns a reference with a lifetime linked to its input
-/// (e.g., `fn(&str) -> &str`), add an explicit lifetime annotation to bypass the check:
-/// - `func!(fn (my_fn)(&str) -> &'_ str)` — elided lifetime, linked to input
-/// - `func!(fn (my_fn)(&str) -> &'static str)` — static lifetime
+/// For example, if a function returns `&'static str`, you must write `&'static str` in the
+/// type signature — not `&str` (which implies a lifetime linked to the input). Mismatched
+/// lifetimes allow the fake to return dangling references. See GitHub issue #73 for details.
 ///
-/// Alternatively, use [`func_unchecked!`] with the `fn` syntax to skip the check entirely.
-///
-/// See GitHub issue #73 for details on the underlying soundness problem.
+/// Use [`verify_func!`] after `func!` to add a compile-time check that catches lifetime
+/// mismatches for functions whose return type is independent of input lifetimes.
 #[macro_export]
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
@@ -40,74 +37,7 @@ macro_rules! func {
         unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
-    // Simplified fn with reference return that has an explicit lifetime (e.g., &'static, &'_).
-    // No invariance check — the user explicitly specified the lifetime.
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $lt:lifetime $ret_inner:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> &$lt $ret_inner)
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $lt:lifetime $ret_inner:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> &$lt $ret_inner)
-    }};
-
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $lt:lifetime $ret_inner:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> &mut $lt $ret_inner)
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $lt:lifetime $ret_inner:ty) => {{
-        $crate::func!($f, fn($($arg_ty),*) -> &mut $lt $ret_inner)
-    }};
-
-    // Simplified fn with bare reference return (no explicit lifetime).
-    // Applies compile-time invariance check to catch lifetime mismatches (issue #73).
-    // If the function's actual return lifetime differs from the elided lifetime,
-    // this produces a compile error. Use an explicit lifetime (e.g., `&'_ str` or
-    // `&'static str`) to bypass this check.
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $ret_inner:ty) => {{
-        {
-            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
-            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
-            let mut __a = __injpp_check_ret($f);
-            let mut __b: fn($($arg_ty),*) -> & $ret_inner = $f;
-            __injpp_eq(&mut __a, &mut __b);
-        }
-        $crate::func!($f, fn($($arg_ty),*) -> & $ret_inner)
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> & $ret_inner:ty) => {{
-        {
-            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
-            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
-            let mut __a = __injpp_check_ret($f);
-            let mut __b: fn($($arg_ty),*) -> & $ret_inner = $f;
-            __injpp_eq(&mut __a, &mut __b);
-        }
-        $crate::func!($f, fn($($arg_ty),*) -> & $ret_inner)
-    }};
-
-    (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $ret_inner:ty) => {{
-        {
-            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
-            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
-            let mut __a = __injpp_check_ret($f);
-            let mut __b: fn($($arg_ty),*) -> &mut $ret_inner = $f;
-            __injpp_eq(&mut __a, &mut __b);
-        }
-        $crate::func!($f, fn($($arg_ty),*) -> &mut $ret_inner)
-    }};
-
-    (fn ( $f:expr ) ( $($arg_ty:ty),* ) -> &mut $ret_inner:ty) => {{
-        {
-            fn __injpp_check_ret<__R>(_f: fn($($arg_ty),*) -> __R) -> fn($($arg_ty),*) -> __R { _f }
-            fn __injpp_eq<__T>(_: &mut __T, _: &mut __T) {}
-            let mut __a = __injpp_check_ret($f);
-            let mut __b: fn($($arg_ty),*) -> &mut $ret_inner = $f;
-            __injpp_eq(&mut __a, &mut __b);
-        }
-        $crate::func!($f, fn($($arg_ty),*) -> &mut $ret_inner)
-    }};
-
-    // Simplified fn with return (catch-all for non-reference return types)
+    // Simplified fn with return
     (func_info: fn ( $f:expr ) ( $($arg_ty:ty),* ) -> $ret:ty) => {{
         $crate::func!($f, fn($($arg_ty),*) -> $ret)
     }};
@@ -180,21 +110,20 @@ macro_rules! func {
     }};
 }
 
-/// Converts a function to a `FuncPtr` without lifetime safety checks.
+/// Converts a function to a `FuncPtr`.
 ///
-/// This macro supports the same syntax as [`func!`]:
+/// This macro handles both generic and non-generic functions:
 /// - Generic function: `func_unchecked!(function_name::<Type1, Type2>)`
 /// - Non-generic function: `func_unchecked!(function_name)`
 /// - Simplified fn syntax: `func_unchecked!(fn (function_name)(ArgType) -> RetType)`
 ///
-/// Use this when `func!` produces a false-positive compile error for functions
-/// with linked-lifetime returns (e.g., `fn(&str) -> &str`).
-///
 /// # Safety
 ///
-/// This macro skips the compile-time lifetime check. The caller must ensure
-/// the function signature exactly matches the function being mocked.
-/// Mismatched lifetimes will lead to undefined behavior.
+/// This macro uses unsafe code internally and comes with the following requirements:
+/// - The function pointer must remain valid for the entire duration it's used by injectorpp
+/// - The function signature must match exactly what the injectorpp expects at runtime
+/// - Mismatched function signatures will lead to undefined behavior or memory corruption
+/// - Function pointers created with this macro should only be used with the appropriate injectorpp APIs
 #[macro_export]
 macro_rules! func_unchecked {
     // Case 1: Generic function — provide function name and types separately
