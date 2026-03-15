@@ -54,8 +54,11 @@ This approach eliminates the need to make a trait solely for testing purposes. I
 
 # Supported Platform
 
-- OS: Linux and Windows
-- Arch: arm64 and amd64
+| OS | Arch |
+| --- | --- |
+| Linux | arm64, arm32, amd64 |
+| macOS | arm64 |
+| Windows | arm64, amd64 |
 
 # Usage
 
@@ -63,7 +66,7 @@ Add `injectorpp` to the `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-injectorpp = "0.4.0"
+injectorpp = "0.5.0"
 ```
 
 Below `profile.test` config is recommended to make sure `injectorpp` working correctly in tests. If you have workspace, make sure add this on the top level of `Cargo.toml`:
