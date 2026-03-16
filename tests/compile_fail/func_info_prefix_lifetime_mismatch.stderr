@@ -1,9 +1,0 @@
-error[E0308]: mismatched types
- --> tests/compile_fail/func_info_prefix_lifetime_mismatch.rs:9:14
-  |
-9 |     let _f = injectorpp::func!(func_info: fn (foo)(&str) -> &str);
-  |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ one type is more general than the other
-  |
-  = note: expected mutable reference `&mut for<'a> fn(&'a str) -> &str`
-             found mutable reference `&mut for<'a> fn(&'a str) -> &'a str`
-  = note: this error originates in the macro `$crate::__func_checked` which comes from the expansion of the macro `injectorpp::func` (in Nightly builds, run with -Z macro-backtrace for more info)
