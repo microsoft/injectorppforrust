@@ -1,8 +1,8 @@
-/// Compile-time lifetime safety tests for the func! macro.
-///
-/// These tests verify that:
-/// - Mismatched lifetimes in bare reference returns are rejected at compile time
-/// - Correct usage patterns (explicit lifetimes, non-reference returns) continue to work
+// Compile-time lifetime safety tests for the func! macro.
+//
+// These tests verify that:
+// - Mismatched lifetimes in bare reference returns are rejected at compile time
+// - Correct usage patterns (explicit lifetimes, non-reference returns) continue to work
 
 use injectorpp::interface::injector::*;
 
@@ -12,75 +12,71 @@ use injectorpp::interface::injector::*;
 // ======================================================================
 
 /// Helper: tries to compile a source file and returns whether it succeeded.
-fn try_compile(source_path: &str) -> bool {
+/// Returns None if build artifacts can't be found (e.g. cross-compilation).
+fn try_compile(source_path: &str) -> Option<bool> {
+    let rlib = find_file(&["target/debug/deps", "target/debug"], "libinjectorpp", ".rlib")?;
+    let ext = if cfg!(windows) { ".dll" } else if cfg!(target_os = "macos") { ".dylib" } else { ".so" };
+    let proc_dylib = find_file(&["target/debug/deps", "target/debug"], "injectorpp_macros", ext)?;
+
     let output = std::process::Command::new("rustc")
         .args([
             "--edition", "2021",
             "--crate-type", "bin",
             "-L", "target/debug/deps",
-            "--extern", &format!("injectorpp={}",
-                find_rlib("target/debug", "libinjectorpp").unwrap()),
-            "--extern", &format!("injectorpp_macros={}",
-                find_proc_macro_dylib("target/debug/deps", "injectorpp_macros").unwrap()),
+            "--extern", &format!("injectorpp={}", rlib),
+            "--extern", &format!("injectorpp_macros={}", proc_dylib),
             "-o", if cfg!(windows) { "NUL" } else { "/dev/null" },
             source_path,
         ])
         .output()
         .expect("failed to invoke rustc");
-    output.status.success()
+    Some(output.status.success())
 }
 
-fn find_rlib(dir: &str, prefix: &str) -> Option<String> {
-    std::fs::read_dir(dir).ok()?
-        .filter_map(|e| e.ok())
-        .find(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.starts_with(prefix) && name.ends_with(".rlib")
-        })
-        .map(|e| e.path().to_string_lossy().to_string())
-}
-
-fn find_proc_macro_dylib(dir: &str, prefix: &str) -> Option<String> {
-    let ext = if cfg!(windows) { ".dll" } else if cfg!(target_os = "macos") { ".dylib" } else { ".so" };
-    std::fs::read_dir(dir).ok()?
-        .filter_map(|e| e.ok())
-        .find(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.starts_with(prefix) && name.ends_with(ext)
-        })
-        .map(|e| e.path().to_string_lossy().to_string())
+fn find_file(dirs: &[&str], prefix: &str, suffix: &str) -> Option<String> {
+    for dir in dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with(prefix) && name.ends_with(suffix) {
+                    return Some(entry.path().to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 #[test]
 fn static_str_coerced_to_bare_ref_must_not_compile() {
-    assert!(
-        !try_compile("tests/compile_fail/static_str_coerced_to_bare_ref.rs"),
-        "expected compile error: &'static str coerced to bare &str should be rejected"
-    );
+    match try_compile("tests/compile_fail/static_str_coerced_to_bare_ref.rs") {
+        Some(compiled) => assert!(!compiled, "expected compile error: &'static str coerced to bare &str should be rejected"),
+        None => eprintln!("skipped: build artifacts not found"),
+    }
 }
 
 #[test]
 fn static_slice_coerced_to_bare_ref_must_not_compile() {
-    assert!(
-        !try_compile("tests/compile_fail/static_slice_coerced_to_bare_ref.rs"),
-        "expected compile error: &'static [u8] coerced to bare &[u8] should be rejected"
-    );
+    match try_compile("tests/compile_fail/static_slice_coerced_to_bare_ref.rs") {
+        Some(compiled) => assert!(!compiled, "expected compile error: &'static [u8] coerced to bare &[u8] should be rejected"),
+        None => eprintln!("skipped: build artifacts not found"),
+    }
 }
 
 #[test]
 fn func_info_prefix_lifetime_mismatch_must_not_compile() {
-    assert!(
-        !try_compile("tests/compile_fail/func_info_prefix_lifetime_mismatch.rs"),
-        "expected compile error: lifetime mismatch with func_info: prefix should be rejected"
-    );
+    match try_compile("tests/compile_fail/func_info_prefix_lifetime_mismatch.rs") {
+        Some(compiled) => assert!(!compiled, "expected compile error: lifetime mismatch with func_info: prefix should be rejected"),
+        None => eprintln!("skipped: build artifacts not found"),
+    }
 }
 
 #[test]
 fn fake_returns_dangling_reference_must_not_compile() {
-    assert!(
-        !try_compile("tests/compile_fail/fake_returns_dangling_reference.rs"),
-        "expected compile error: fake returning dangling reference via lifetime coercion should be rejected"
-    );
+    match try_compile("tests/compile_fail/fake_returns_dangling_reference.rs") {
+        Some(compiled) => assert!(!compiled, "expected compile error: fake returning dangling reference via lifetime coercion should be rejected"),
+        None => eprintln!("skipped: build artifacts not found"),
+    }
 }
 
 // ======================================================================
