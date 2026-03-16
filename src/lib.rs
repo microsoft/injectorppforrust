@@ -555,3 +555,6 @@
 //! ```
 mod injector_core;
 pub mod interface;
+
+#[doc(hidden)]
+pub use injectorpp_macros::func_checked as __func_checked;

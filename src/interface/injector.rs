@@ -3,6 +3,7 @@ use crate::injector_core::common::*;
 use crate::injector_core::internal::*;
 pub use crate::interface::func_ptr::FuncPtr;
 pub use crate::interface::macros::__assert_future_output;
+pub use crate::interface::macros::__type_id_of_val;
 pub use crate::interface::verifier::CallCountVerifier;
 
 use std::future::Future;
@@ -166,6 +167,7 @@ impl InjectorPP {
             lib: self,
             when,
             expected_signature: func.signature,
+            expected_type_id: func.type_id,
         }
     }
 
@@ -211,6 +213,7 @@ impl InjectorPP {
             lib: self,
             when,
             expected_signature: "",
+            expected_type_id: None,
         }
     }
 
@@ -254,15 +257,16 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(
-            crate::func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
-        );
+        let when = WhenCalled::new(unsafe {
+            FuncPtr::new(poll_fn as *const (), std::any::type_name_of_val(&poll_fn))
+        }.func_ptr_internal);
 
         let signature = fake_pair.1;
         WhenCalledBuilderAsync {
             lib: self,
             when,
             expected_signature: signature,
+            expected_type_id: None,
         }
     }
 
@@ -313,14 +317,15 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(
-            crate::func!(poll_fn, fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T>).func_ptr_internal,
-        );
+        let when = WhenCalled::new(unsafe {
+            FuncPtr::new(poll_fn as *const (), std::any::type_name_of_val(&poll_fn))
+        }.func_ptr_internal);
 
         WhenCalledBuilderAsync {
             lib: self,
             when,
             expected_signature: "",
+            expected_type_id: None,
         }
     }
 }
@@ -356,6 +361,7 @@ pub struct WhenCalledBuilder<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
     expected_signature: &'static str,
+    expected_type_id: Option<std::any::TypeId>,
 }
 
 impl WhenCalledBuilder<'_> {
@@ -403,11 +409,24 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub fn will_execute_raw(self, target: FuncPtr) {
-        if normalize_signature(target.signature) != normalize_signature(self.expected_signature) {
-            panic!(
-                "Signature mismatch: expected {:?} but got {:?}",
-                self.expected_signature, target.signature
-            );
+        match (self.expected_type_id, target.type_id) {
+            (Some(expected), Some(actual)) if expected != actual => {
+                panic!(
+                    "Signature mismatch: expected {:?} but got {:?}",
+                    self.expected_signature, target.signature
+                );
+            }
+            (None, _) | (_, None) => {
+                if normalize_signature(target.signature)
+                    != normalize_signature(self.expected_signature)
+                {
+                    panic!(
+                        "Signature mismatch: expected {:?} but got {:?}",
+                        self.expected_signature, target.signature
+                    );
+                }
+            }
+            _ => {}
         }
 
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
@@ -577,6 +596,7 @@ pub struct WhenCalledBuilderAsync<'a> {
     lib: &'a mut InjectorPP,
     when: WhenCalled,
     expected_signature: &'static str,
+    expected_type_id: Option<std::any::TypeId>,
 }
 
 impl WhenCalledBuilderAsync<'_> {
@@ -605,11 +625,24 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub fn will_return_async(self, target: FuncPtr) {
-        if normalize_signature(target.signature) != normalize_signature(self.expected_signature) {
-            panic!(
-                "Signature mismatch: expected {:?} but got {:?}",
-                self.expected_signature, target.signature
-            );
+        match (self.expected_type_id, target.type_id) {
+            (Some(expected), Some(actual)) if expected != actual => {
+                panic!(
+                    "Signature mismatch: expected {:?} but got {:?}",
+                    self.expected_signature, target.signature
+                );
+            }
+            (None, _) | (_, None) => {
+                if normalize_signature(target.signature)
+                    != normalize_signature(self.expected_signature)
+                {
+                    panic!(
+                        "Signature mismatch: expected {:?} but got {:?}",
+                        self.expected_signature, target.signature
+                    );
+                }
+            }
+            _ => {}
         }
 
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
