@@ -75,6 +75,14 @@ fn func_info_prefix_lifetime_mismatch_must_not_compile() {
     );
 }
 
+#[test]
+fn issue73_full_scenario_must_not_compile() {
+    assert!(
+        !try_compile("tests/compile_fail/issue73_full_scenario.rs"),
+        "expected compile error: the exact issue #73 scenario (func + fake + use-after-free) should be rejected"
+    );
+}
+
 // ======================================================================
 // Pass tests: correct usage patterns that must continue to work
 // ======================================================================
