@@ -572,3 +572,31 @@ fn test_will_execute_fake_unsafe_unit_assign_and_times_over_called_should_panic(
     });
     assert!(result.is_err());
 }
+
+// Generic function where type parameter S appears inside a slice reference.
+// When monomorphized with S = &str, the fn pointer type has different lifetime
+// counts than the explicit fn pointer type (issue #107).
+fn generic_with_ref_type_param<S: AsRef<str>>(
+    _prefix: &str,
+    _items: &[S],
+) -> String {
+    "original".to_string()
+}
+
+#[test]
+fn test_will_execute_generic_func_with_ref_type_param_via_turbofish() {
+    let mut injector = InjectorPP::new();
+    injector
+        .when_called(injectorpp::func!(
+            generic_with_ref_type_param::<&str>,
+            fn(&str, &[&str]) -> String
+        ))
+        .will_execute(injectorpp::fake!(
+            func_type: fn(_prefix: &str, _items: &[&str]) -> String,
+            returns: "mocked".to_string(),
+            times: 1
+        ));
+
+    let result = generic_with_ref_type_param("hello", &["a", "b"]);
+    assert_eq!(result, "mocked");
+}

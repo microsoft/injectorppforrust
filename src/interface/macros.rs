@@ -19,9 +19,8 @@
 macro_rules! func {
     // Case 1: Generic function — provide function name and types separately
     ($f:ident :: <$($gen:ty),*>, $fn_type:ty) => {{
-        let fn_val:$fn_type = $f::<$($gen),*>;
-        let ptr = fn_val as *const ();
-        let sig = std::any::type_name_of_val(&fn_val);
+        let ptr = $f::<$($gen),*> as *const ();
+        let sig = std::any::type_name::<$fn_type>();
         let type_id = std::any::TypeId::of::<$fn_type>();
 
         unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
@@ -29,9 +28,8 @@ macro_rules! func {
 
     // Case 2: Non-generic function with explicit type
     ($f:expr, $fn_type:ty) => {{
-        let fn_val:$fn_type = $f;
-        let ptr = fn_val as *const ();
-        let sig = std::any::type_name_of_val(&fn_val);
+        let ptr = ($f) as *const ();
+        let sig = std::any::type_name::<$fn_type>();
         let type_id = std::any::TypeId::of::<$fn_type>();
 
         unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
