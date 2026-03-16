@@ -1,4 +1,4 @@
-/// Issue #73 variant: func_info prefix should also be checked.
+/// Lifetime check also applies when using the func_info: prefix syntax.
 use injectorpp::interface::injector::*;
 
 fn foo(_s: &str) -> &'static str {
