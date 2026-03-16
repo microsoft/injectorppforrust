@@ -1,0 +1,16 @@
+error[E0106]: missing lifetime specifier
+  --> tests/compile_fail/issue73_static_slice_as_bare_ref.rs:10:55
+   |
+10 |     let _f = injectorpp::func!(fn (get_bytes)(i32) -> &[u8]);
+   |                                                       ^ expected named lifetime parameter
+   |
+   = help: this function's return type contains a borrowed value, but there is no value for it to be borrowed from
+help: consider using the `'static` lifetime, but this is uncommon unless you're returning a borrowed value from a `const` or a `static`
+   |
+10 |     let _f = injectorpp::func!(fn (get_bytes)(i32) -> &'static [u8]);
+   |                                                        +++++++
+help: instead, you are more likely to want to return an owned value
+   |
+10 -     let _f = injectorpp::func!(fn (get_bytes)(i32) -> &[u8]);
+10 +     let _f = injectorpp::func!(fn (get_bytes)(i32) -> [u8]);
+   |
