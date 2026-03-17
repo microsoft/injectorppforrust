@@ -213,24 +213,27 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
 
     #[cfg(target_arch = "x86_64")]
     {
-        let max_range: usize = 0x8000_0000; // ±2GB
-        let original_addr = _src.as_ptr() as usize;
-        let page_size = unsafe { get_page_size() };
-        let mut addr = original_addr.saturating_sub(max_range);
+        let max_range: u64 = 0x8000_0000; // ±2GB
+        let original_addr = _src.as_ptr() as u64;
+        let page_size = unsafe { get_page_size() as u64 };
 
-        while addr <= original_addr + max_range {
+        // Search from the function address to find the CLOSEST free page.
+        let mut offset: u64 = 0;
+        while offset <= max_range {
+            let Some(offset_addr) = original_addr.checked_sub(offset) else { continue };
+
             let ptr = unsafe {
                 VirtualAlloc(
-                    addr as *mut c_void,
+                    offset_addr as *mut c_void,
                     code_size,
                     MEM_COMMIT | MEM_RESERVE,
                     PAGE_EXECUTE_READWRITE,
                 )
             };
-
             if !ptr.is_null() {
-                let allocated = ptr as usize;
-                if allocated.abs_diff(original_addr) <= max_range {
+                let allocated = ptr as u64;
+                let diff = allocated.abs_diff(original_addr);
+                if diff <= max_range {
                     return ptr as *mut u8;
                 } else {
                     unsafe {
@@ -238,10 +241,9 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
                     }
                 }
             }
-
-            addr += page_size;
+            
+            offset += page_size;
         }
-
         panic!("Failed to allocate executable memory within ±2GB of original function address on x86_64 Windows");
     }
 
