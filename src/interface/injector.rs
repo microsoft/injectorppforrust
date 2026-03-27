@@ -13,10 +13,11 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 use std::sync::Mutex;
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 use std::sync::MutexGuard;
+use std::sync::RwLock;
+use std::sync::RwLockReadGuard;
+use std::sync::RwLockWriteGuard;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 use crate::injector_core::thread_local_registry::ThreadRegistration;
@@ -29,14 +30,12 @@ fn normalize_signature(sig: &str) -> String {
 }
 
 /// A `Mutex` that never stays poisoned: on panic it just recovers the guard.
-///
-/// Only used on non-x86_64 architectures where the global mutex approach is still used.
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+#[allow(dead_code)]
 struct NoPoisonMutex<T> {
     inner: Mutex<T>,
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+#[allow(dead_code)]
 impl<T> NoPoisonMutex<T> {
     const fn new(value: T) -> Self {
         Self {
@@ -52,39 +51,65 @@ impl<T> NoPoisonMutex<T> {
     }
 }
 
+/// Global mutex used on non-TLS architectures to serialize all patching.
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 static LOCK_FUNCTION: NoPoisonMutex<()> = NoPoisonMutex::new(());
+
+/// RwLock for coordinating thread-local vs global fakes.
+/// - `when_called()` (thread-local) acquires a **read** lock — multiple thread-local
+///   tests can run in parallel.
+/// - `when_called_globally()` acquires a **write** lock — blocks until all thread-local
+///   tests finish, and prevents new tests from starting. This is exactly 0.4.0 behavior
+///   for the duration of the global fake.
+static GLOBAL_FAKE_LOCK: RwLock<()> = RwLock::new(());
 
 /// A high-level type that holds patch guards so that when it goes out of scope,
 /// the original function code is automatically restored.
 ///
 /// # Thread Safety
 ///
-/// On x86_64 and aarch64, InjectorPP uses thread-local dispatch: each thread can
-/// independently fake the same function to different values without interference.
+/// On x86_64 and aarch64, InjectorPP uses thread-local dispatch by default: each thread
+/// can independently fake the same function to different values without interference.
 /// Tests using InjectorPP can run in parallel.
 ///
-/// On other architectures, InjectorPP ensures thread safety by holding a global mutex
-/// for the entire lifetime of the patch.
+/// Use `InjectorPP::new_global()` for 0.4.0-style global patching where fakes are visible
+/// to all threads (e.g., when faked functions are called from background timer threads).
+/// Global mode acquires an exclusive lock — other tests wait until the global injector drops.
+///
+/// On other architectures, InjectorPP always uses global patching with a global mutex.
 pub struct InjectorPP {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
     registrations: Vec<ThreadRegistration>,
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
     guards: Vec<PatchGuard>,
     verifiers: Vec<CallCountVerifier>,
+    /// Read guard: held by thread-local fakes. Allows parallel TLS tests.
+    /// Write guard: held by global fakes. Blocks all other tests.
+    _rw_guard: RwGuard,
+    /// When true, `when_called()` uses direct code patching (0.4.0-style global).
+    /// When false (default), uses thread-local dispatch.
+    use_global: bool,
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
     _not_send: PhantomData<*const ()>,
     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
     _lock: MutexGuard<'static, ()>,
 }
 
+/// Holds either a read or write guard on GLOBAL_FAKE_LOCK, or none (transient during upgrade).
+/// The guard values are never read directly — they exist solely to keep the lock held.
+#[allow(dead_code)]
+enum RwGuard {
+    None,
+    Read(RwLockReadGuard<'static, ()>),
+    Write(RwLockWriteGuard<'static, ()>),
+}
+
 impl InjectorPP {
-    /// Creates a new `InjectorPP` instance.
-    ///
-    /// `InjectorPP` allows faking Rust functions at runtime without modifying the original code.
+    /// Creates a new `InjectorPP` instance with **thread-local** dispatch (default).
     ///
     /// On x86_64 and aarch64, each instance registers thread-local replacements, enabling parallel test execution.
-    /// On other architectures, it holds a global mutex for the entire lifetime of the patch.
+    /// Fakes are only visible on the thread that created the injector.
+    ///
+    /// Use `new_global()` instead if your faked functions will be called from background threads.
     ///
     /// # Example
     ///
@@ -96,9 +121,17 @@ impl InjectorPP {
     pub fn new() -> Self {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
         {
+            // Acquire a read lock — allows parallel TLS tests, blocks while a global fake is active.
+            let rw_guard = match GLOBAL_FAKE_LOCK.read() {
+                Ok(g) => g,
+                Err(e) => e.into_inner(),
+            };
             Self {
                 registrations: Vec::new(),
+                guards: Vec::new(),
                 verifiers: Vec::new(),
+                _rw_guard: RwGuard::Read(rw_guard),
+                use_global: false,
                 _not_send: PhantomData,
             }
         }
@@ -106,9 +139,66 @@ impl InjectorPP {
         #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
         {
             let lock = LOCK_FUNCTION.lock();
+            let rw_guard = match GLOBAL_FAKE_LOCK.read() {
+                Ok(g) => g,
+                Err(e) => e.into_inner(),
+            };
             Self {
                 guards: Vec::new(),
                 verifiers: Vec::new(),
+                _rw_guard: RwGuard::Read(rw_guard),
+                use_global: false,
+                _lock: lock,
+            }
+        }
+    }
+
+    /// Creates a new `InjectorPP` instance with **global** (0.4.0-style) patching.
+    ///
+    /// All `when_called()` fakes will use direct code patching, visible to **all threads**.
+    /// This acquires an exclusive write lock — other tests (both thread-local and global)
+    /// will wait until this instance is dropped.
+    ///
+    /// Use this when the faked functions will be called from background threads,
+    /// timers, or thread pools.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use injectorpp::interface::injector::InjectorPP;
+    ///
+    /// // All fakes created with this injector are visible to all threads
+    /// let injector = InjectorPP::new_global();
+    /// ```
+    pub fn new_global() -> Self {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
+        {
+            let rw_guard = match GLOBAL_FAKE_LOCK.write() {
+                Ok(g) => g,
+                Err(e) => e.into_inner(),
+            };
+            Self {
+                registrations: Vec::new(),
+                guards: Vec::new(),
+                verifiers: Vec::new(),
+                _rw_guard: RwGuard::Write(rw_guard),
+                use_global: true,
+                _not_send: PhantomData,
+            }
+        }
+
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+        {
+            let lock = LOCK_FUNCTION.lock();
+            let rw_guard = match GLOBAL_FAKE_LOCK.write() {
+                Ok(g) => g,
+                Err(e) => e.into_inner(),
+            };
+            Self {
+                guards: Vec::new(),
+                verifiers: Vec::new(),
+                _rw_guard: RwGuard::Write(rw_guard),
+                use_global: true,
                 _lock: lock,
             }
         }
@@ -429,16 +519,21 @@ impl WhenCalledBuilder<'_> {
             _ => {}
         }
 
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
-        {
-            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
-            self.lib.registrations.push(reg);
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
-        {
+        if self.lib.use_global {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
+        } else {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
+            {
+                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                self.lib.registrations.push(reg);
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+            {
+                let guard = self.when.will_execute_guard(target.func_ptr_internal);
+                self.lib.guards.push(guard);
+            }
         }
     }
 
@@ -496,16 +591,21 @@ impl WhenCalledBuilder<'_> {
     /// assert!(Path::new("/nonexistent").exists());
     /// ```
     pub unsafe fn will_execute_raw_unchecked(self, target: FuncPtr) {
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
-        {
-            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
-            self.lib.registrations.push(reg);
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
-        {
+        if self.lib.use_global {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
+        } else {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
+            {
+                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                self.lib.registrations.push(reg);
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+            {
+                let guard = self.when.will_execute_guard(target.func_ptr_internal);
+                self.lib.guards.push(guard);
+            }
         }
     }
 
@@ -578,16 +678,21 @@ impl WhenCalledBuilder<'_> {
             );
         }
 
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
-        {
-            let reg = self.when.will_return_boolean_thread_local(value);
-            self.lib.registrations.push(reg);
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
-        {
+        if self.lib.use_global {
             let guard = self.when.will_return_boolean_guard(value);
             self.lib.guards.push(guard);
+        } else {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
+            {
+                let reg = self.when.will_return_boolean_thread_local(value);
+                self.lib.registrations.push(reg);
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+            {
+                let guard = self.when.will_return_boolean_guard(value);
+                self.lib.guards.push(guard);
+            }
         }
     }
 }
@@ -645,16 +750,21 @@ impl WhenCalledBuilderAsync<'_> {
             _ => {}
         }
 
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
-        {
-            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
-            self.lib.registrations.push(reg);
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
-        {
+        if self.lib.use_global {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
+        } else {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
+            {
+                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                self.lib.registrations.push(reg);
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+            {
+                let guard = self.when.will_execute_guard(target.func_ptr_internal);
+                self.lib.guards.push(guard);
+            }
         }
     }
 
@@ -690,16 +800,22 @@ impl WhenCalledBuilderAsync<'_> {
     /// }
     /// ```
     pub unsafe fn will_return_async_unchecked(self, target: FuncPtr) {
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
-        {
-            let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
-            self.lib.registrations.push(reg);
-        }
-
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
-        {
+        if self.lib.use_global {
             let guard = self.when.will_execute_guard(target.func_ptr_internal);
             self.lib.guards.push(guard);
+        } else {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
+            {
+                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                self.lib.registrations.push(reg);
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+            {
+                let guard = self.when.will_execute_guard(target.func_ptr_internal);
+                self.lib.guards.push(guard);
+            }
         }
     }
 }
+

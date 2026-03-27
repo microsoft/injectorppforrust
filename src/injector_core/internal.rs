@@ -1,7 +1,13 @@
 use crate::injector_core::common::*;
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
 use super::patch_trait::PatchTrait;
+
+#[cfg(target_arch = "x86_64")]
+use super::patch_amd64::PatchAmd64;
+#[cfg(target_arch = "aarch64")]
+use super::patch_arm64::PatchArm64;
+#[cfg(target_arch = "arm")]
+use super::patch_arm::PatchArm;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 use super::thread_local_registry;
@@ -19,10 +25,15 @@ impl WhenCalled {
         Self { func_ptr: func }
     }
 
-    /// Patches the target function so that it branches to a JIT block that uses an absolute jump
-    /// to call the target function.
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+    /// Patches the target function with a direct JMP to the replacement (0.4.0-style global patching).
+    /// All threads see the fake because the function's code bytes are overwritten.
+    /// Used by `when_called_globally()`.
     pub(crate) fn will_execute_guard(self, target: FuncPtrInternal) -> PatchGuard {
+        #[cfg(target_arch = "x86_64")]
+        {
+            PatchAmd64::replace_function_with_other_function(self.func_ptr, target)
+        }
+
         #[cfg(target_arch = "aarch64")]
         {
             PatchArm64::replace_function_with_other_function(self.func_ptr, target)
@@ -101,9 +112,14 @@ impl WhenCalled {
         )
     }
 
-    /// Patches the target function so that it branches to a JIT block that returns the specified boolean.
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm")))]
+    /// Patches the target function to return a fixed boolean via direct JMP (0.4.0-style).
+    /// All threads see the fake. Used by `when_called_globally().will_return_boolean()`.
     pub(crate) fn will_return_boolean_guard(self, value: bool) -> PatchGuard {
+        #[cfg(target_arch = "x86_64")]
+        {
+            PatchAmd64::replace_function_return_boolean(self.func_ptr, value)
+        }
+
         #[cfg(target_arch = "aarch64")]
         {
             PatchArm64::replace_function_return_boolean(self.func_ptr, value)
