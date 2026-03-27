@@ -24,7 +24,7 @@ jobs:
       - name: Publish injectorpp-macros to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: cargo publish --locked --package injectorpp-macros
+        run: cd injectorpp-macros && cargo publish --locked
 
       - name: Wait for crates.io index update
         run: sleep 30
