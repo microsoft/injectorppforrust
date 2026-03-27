@@ -76,23 +76,41 @@ fn generate_branch_to_target_function(ori_func: usize, target_func: usize) -> Ve
 }
 
 fn patch_and_guard(src: FuncPtrInternal, jit_memory: *mut u8, jit_size: usize) -> PatchGuard {
-    let func_addr = src.as_ptr() as usize;
+    // Resolve IAT thunks (jmp [rip+disp]) to the actual function address.
+    // This matches what thread_local_registry does, ensuring we patch the real
+    // function address — not the thunk — so the patch is visible to all call paths.
+    let func_addr = unsafe { resolve_to_real_function(src.as_ptr() as *mut u8) } as usize;
     let jit_addr = jit_memory as usize;
 
     let branch_code = generate_branch_to_target_function(func_addr, jit_addr);
     let patch_size = branch_code.len();
 
-    let original_bytes = unsafe { read_bytes(src.as_ptr() as *mut u8, patch_size) };
+    let original_bytes = unsafe { read_bytes(func_addr as *mut u8, patch_size) };
 
     unsafe {
-        patch_function(src.as_ptr() as *mut u8, &branch_code);
+        patch_function(func_addr as *mut u8, &branch_code);
     }
 
     PatchGuard::new(
-        src.as_ptr() as *mut u8,
+        func_addr as *mut u8,
         original_bytes,
         patch_size,
         jit_memory,
         jit_size,
     )
+}
+
+/// Resolve import thunks to the actual function address on Windows x86_64.
+/// Extern functions go through an IAT thunk: `jmp [rip+disp32]` (FF 25 xx xx xx xx).
+/// This follows the indirection to return the real function address.
+unsafe fn resolve_to_real_function(func_addr: *mut u8) -> *mut u8 {
+    let code = std::slice::from_raw_parts(func_addr, 6);
+    if code[0] == 0xFF && code[1] == 0x25 {
+        let disp = i32::from_le_bytes([code[2], code[3], code[4], code[5]]);
+        let rip_after_insn = func_addr.add(6);
+        let iat_entry = rip_after_insn.offset(disp as isize) as *const *mut u8;
+        let real_addr = std::ptr::read(iat_entry);
+        return resolve_to_real_function(real_addr);
+    }
+    func_addr
 }

@@ -141,14 +141,19 @@ impl Drop for ThreadRegistration {
 
 /// Called by the JIT dispatcher to get the target function pointer for the current thread.
 ///
-/// If the current thread has a registered replacement for `method_key`, returns that.
-/// Otherwise, returns `default_target` (the trampoline to the original function).
+/// Returns the thread-local replacement if registered, otherwise falls back to
+/// the default target (the trampoline to the original function).
 ///
 /// # Safety
 /// This function is called from JIT-generated code. It must not panic across the FFI boundary.
 pub(crate) extern "C" fn get_thread_target(method_key: usize, default_target: usize) -> usize {
     match std::panic::catch_unwind(AssertUnwindSafe(|| {
-        tls_get(&method_key, default_target)
+        let tls_result = tls_get(&method_key, 0);
+        if tls_result != 0 {
+            return tls_result;
+        }
+
+        default_target
     })) {
         Ok(target) => target,
         Err(_) => default_target,
