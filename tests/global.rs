@@ -41,7 +41,7 @@ fn test_global_fake_visible_from_spawned_thread() {
 
     assert_eq!(global_test_func(), 99);
 
-    let handle = thread::spawn(|| global_test_func());
+    let handle = thread::spawn(global_test_func);
     assert_eq!(handle.join().unwrap(), 99);
 }
 
@@ -55,7 +55,7 @@ fn test_global_fake_boolean_visible_from_spawned_thread() {
 
     assert!(global_test_func_bool());
 
-    let handle = thread::spawn(|| global_test_func_bool());
+    let handle = thread::spawn(global_test_func_bool);
     assert!(handle.join().unwrap());
 }
 
@@ -178,12 +178,14 @@ fn test_global_fake_unchecked_cross_thread() {
 
     assert_eq!(global_test_func(), 9999);
 
-    let handle = thread::spawn(|| global_test_func());
+    let handle = thread::spawn(global_test_func);
     assert_eq!(handle.join().unwrap(), 9999);
 }
 
 /// Verifies that `new()` (thread-local mode) still works correctly — fakes are NOT visible
 /// from spawned threads (default 0.5.0 behavior).
+/// Only meaningful on architectures that support thread-local dispatch.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[test]
 fn test_thread_local_mode_not_visible_from_spawned_thread() {
     let mut injector = InjectorPP::new();
