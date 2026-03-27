@@ -4,25 +4,28 @@ use std::sync::Arc;
 use std::thread;
 
 // ---- Helper functions for testing ----
+// These use `core::hint::black_box` to ensure each function's compiled code is
+// at least 16 bytes. On ARM, the PatchGuard uses 12-byte patches; tiny functions
+// placed adjacently by the linker would overlap when patched simultaneously.
 
 #[inline(never)]
 fn global_test_func() -> i32 {
-    42
+    core::hint::black_box(core::hint::black_box(21) + core::hint::black_box(21))
 }
 
 #[inline(never)]
 fn global_test_func_bool() -> bool {
-    false
+    core::hint::black_box(!core::hint::black_box(true))
 }
 
 #[inline(never)]
 fn global_add(a: i32, b: i32) -> i32 {
-    a + b
+    core::hint::black_box(core::hint::black_box(a) + core::hint::black_box(b))
 }
 
 #[inline(never)]
 fn global_multiply(a: i32, b: i32) -> i32 {
-    a * b
+    core::hint::black_box(core::hint::black_box(a) * core::hint::black_box(b))
 }
 
 // ---- Tests ----
@@ -184,9 +187,8 @@ fn test_global_fake_unchecked_cross_thread() {
 
 /// Verifies that `new()` (thread-local mode) still works correctly — fakes are NOT visible
 /// from spawned threads (default 0.5.0 behavior).
-/// Only meaningful on architectures that support thread-local dispatch.
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[test]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 fn test_thread_local_mode_not_visible_from_spawned_thread() {
     let mut injector = InjectorPP::new();
     injector
