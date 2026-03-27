@@ -66,7 +66,7 @@ Add `injectorpp` to the `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-injectorpp = "0.5.0"
+injectorpp = "0.5.1"
 ```
 
 Below `profile.test` config is recommended to make sure `injectorpp` working correctly in tests. If you have workspace, make sure add this on the top level of `Cargo.toml`:
@@ -87,6 +87,63 @@ use injectorpp::interface::injector::*;
 ```
 
 Below are multiple ways to config the function behavior.
+
+## Thread-local vs Global mode
+
+By default, `InjectorPP::new()` uses **thread-local dispatch** — fakes are only visible on the thread that created the injector. This enables parallel test execution without interference between tests.
+
+However, if your code under test spawns background threads, timers, or uses thread pools (e.g., rayon), those worker threads won't see thread-local fakes. For these cases, use `InjectorPP::new_global()`:
+
+```rust
+// Thread-local mode (default) — fakes only visible on the current thread
+let mut injector = InjectorPP::new();
+
+// Global mode — fakes visible to ALL threads (background threads, rayon, timers)
+let mut injector = InjectorPP::new_global();
+```
+
+`new_global()` uses direct code patching, making fakes visible process-wide. It acquires an exclusive lock, so tests using `new_global()` run serialized to prevent interference.
+
+**When to use `new_global()`:**
+- Your faked function is called from a background thread or timer
+- You use `rayon::join`, `rayon::par_iter`, or similar thread pool APIs
+- You need the same behavior as injectorpp 0.4.0
+
+**Example with rayon:**
+
+```rust
+fn some_string() -> String {
+    "original".into()
+}
+
+fn some_other_string() -> String {
+    "original".into()
+}
+
+#[test]
+fn test_rayon_join_with_global_fakes() {
+    let mut injector = InjectorPP::new_global();
+
+    injector
+        .when_called(injectorpp::func!(fn (some_string)() -> String))
+        .will_execute(injectorpp::fake!(
+            func_type: fn() -> String,
+            returns: "faked".into()
+        ));
+
+    injector
+        .when_called(injectorpp::func!(fn (some_other_string)() -> String))
+        .will_execute(injectorpp::fake!(
+            func_type: fn() -> String,
+            returns: "faked".into()
+        ));
+
+    // Both functions run on rayon worker threads — global fakes are visible
+    let (a, b) = rayon::join(some_string, some_other_string);
+    assert_eq!(a, "faked");
+    assert_eq!(b, "faked");
+}
+```
 
 ## `will_return_boolean`
 

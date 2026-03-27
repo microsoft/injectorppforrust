@@ -1,3 +1,12 @@
+# 0.5.1 (March 27, 2026)
+
+- Add `InjectorPP::new_global()` constructor for cross-thread fake visibility.
+  - Fakes registered through `new_global()` use direct code patching (0.4.0-style) and are visible to **all threads**, including background threads, timers, and thread pools like rayon.
+  - `new()` remains the default with thread-local dispatch for parallel test execution.
+  - `new_global()` acquires an exclusive lock, serializing tests that use it.
+- Fix fakes not visible from rayon worker threads and background timer threads (issue #121).
+- Add IAT thunk resolution to PatchGuard path on Windows x86_64.
+
 # 0.5.0 (March 15, 2026)
 
 - Add macOS support.

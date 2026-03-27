@@ -186,7 +186,7 @@ fn test_global_fake_unchecked_cross_thread() {
 }
 
 /// Verifies that `new()` (thread-local mode) still works correctly — fakes are NOT visible
-/// from spawned threads (default 0.5.0 behavior).
+/// from spawned threads (default thread-local behavior).
 #[test]
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 fn test_thread_local_mode_not_visible_from_spawned_thread() {
