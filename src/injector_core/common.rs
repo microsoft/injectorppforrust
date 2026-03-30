@@ -80,7 +80,10 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         #[cfg(target_os = "macos")]
         let max_range: u64 = 0x8000_0000; // ±2GB
 
-        #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         let max_range: u64 = 0x8000000; // ±128MB
 
         #[cfg(all(target_os = "linux", target_arch = "arm"))]
@@ -158,6 +161,7 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         ptr as *mut u8
     }
 }
+
 // See https://github.com/microsoft/injectorppforrust/issues/84
 /// Allocate executable JIT memory on Windows platforms.
 ///
@@ -165,55 +169,14 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
 /// For x86_64, memory must be within ±2GB for `jmp rel32` instructions.
 #[cfg(target_os = "windows")]
 fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
+        #[cfg(target_arch = "aarch64")]
         let max_range: u64 = 0x8000000; // ±128MB
-        let original_addr = _src.as_ptr() as u64;
-        let page_size = unsafe { get_page_size() as u64 };
 
-        // Search outward from the function address to find the CLOSEST free page.
-        let mut offset: u64 = 0;
-        while offset <= max_range {
-            for &dir in &[1i64, -1i64] {
-                let hint = if dir > 0 {
-                    original_addr.checked_add(offset)
-                } else if offset > 0 {
-                    original_addr.checked_sub(offset)
-                } else {
-                    continue;
-                };
-
-                let Some(hint_addr) = hint else { continue };
-
-                let ptr = unsafe {
-                    VirtualAlloc(
-                        hint_addr as *mut c_void,
-                        code_size,
-                        MEM_COMMIT | MEM_RESERVE,
-                        PAGE_EXECUTE_READWRITE,
-                    )
-                };
-                if !ptr.is_null() {
-                    let allocated = ptr as u64;
-                    let diff = allocated.abs_diff(original_addr);
-                    if diff <= max_range {
-                        return ptr as *mut u8;
-                    } else {
-                        unsafe {
-                            VirtualFree(ptr, 0, MEM_RELEASE);
-                        }
-                    }
-                }
-            }
-            offset += page_size;
-        }
-
-        panic!("Failed to allocate executable memory within ±128MB of original function address on AArch64 Windows");
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
+        #[cfg(target_arch = "x86_64")]
         let max_range: u64 = 0x8000_0000; // ±2GB
+
         let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { get_page_size() as u64 };
 
@@ -256,7 +219,10 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
             offset += page_size;
         }
 
-        panic!("Failed to allocate executable memory within ±2GB of original function address on x86_64 Windows");
+        panic!(
+            "Failed to allocate JIT memory within ±{max_range} bytes of source on {} arch",
+            std::env::consts::ARCH
+        );
     }
 
     #[cfg(all(not(target_arch = "x86_64"), not(target_arch = "aarch64")))]
@@ -531,9 +497,7 @@ mod tests {
     #[test]
     fn test_jit_allocation_is_close_to_source() {
         let func_ptr = unsafe {
-            FuncPtrInternal::new(
-                std::ptr::NonNull::new(dummy_target_function as *mut ()).unwrap(),
-            )
+            FuncPtrInternal::new(std::ptr::NonNull::new(dummy_target_function as *mut ()).unwrap())
         };
         let func_addr = func_ptr.as_ptr() as u64;
 
@@ -574,9 +538,7 @@ mod tests {
     #[test]
     fn test_jit_allocation_not_in_stack_region() {
         let func_ptr = unsafe {
-            FuncPtrInternal::new(
-                std::ptr::NonNull::new(dummy_target_function as *mut ()).unwrap(),
-            )
+            FuncPtrInternal::new(std::ptr::NonNull::new(dummy_target_function as *mut ()).unwrap())
         };
 
         // Use a stack local's address to approximate the stack location
