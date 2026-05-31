@@ -24,7 +24,7 @@ macro_rules! func {
         let sig = std::any::type_name_of_val(&fn_val);
         let type_id = std::any::TypeId::of::<$fn_type>();
 
-        unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
+        unsafe { $crate::interface::injector::FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
     // Case 2: Non-generic function with explicit type
@@ -34,7 +34,7 @@ macro_rules! func {
         let sig = std::any::type_name_of_val(&fn_val);
         let type_id = std::any::TypeId::of::<$fn_type>();
 
-        unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
+        unsafe { $crate::interface::injector::FuncPtr::new_with_type_id(ptr, sig, type_id) }
     }};
 
     // All simplified fn syntax patterns: delegate to proc macro for
@@ -65,7 +65,7 @@ macro_rules! func_unchecked {
         let fn_val = $f::<$($gen),*>;
         let ptr = fn_val as *const ();
 
-        FuncPtr::new(ptr, "")
+        $crate::interface::injector::FuncPtr::new(ptr, "")
     }};
 
     // Case 2: Non-generic function
@@ -73,7 +73,7 @@ macro_rules! func_unchecked {
         let fn_val = $f;
         let ptr = fn_val as *const ();
 
-        FuncPtr::new(ptr, "")
+        $crate::interface::injector::FuncPtr::new(ptr, "")
     }};
 
     // Case 3: Simplified fn syntax with return — skips lifetime check
@@ -103,7 +103,13 @@ macro_rules! closure {
         let sig = std::any::type_name_of_val(&fn_val);
         let type_id = std::any::TypeId::of::<$fn_type>();
 
-        unsafe { FuncPtr::new_with_type_id(fn_val as *const (), sig, type_id) }
+        unsafe {
+            $crate::interface::injector::FuncPtr::new_with_type_id(
+                fn_val as *const (),
+                sig,
+                type_id,
+            )
+        }
     }};
 }
 
@@ -128,7 +134,7 @@ macro_rules! closure {
 macro_rules! closure_unchecked {
     ($closure:expr, $fn_type:ty) => {{
         let fn_val: $fn_type = $closure;
-        FuncPtr::new(fn_val as *const (), "")
+        $crate::interface::injector::FuncPtr::new(fn_val as *const (), "")
     }};
 }
 
@@ -151,7 +157,7 @@ macro_rules! async_func {
     ($expr:expr, $ty:ty) => {{
         let mut __fut = $expr;
 
-        let _ = __assert_future_output::<_, $ty>(&mut __fut);
+        let _ = $crate::interface::injector::__assert_future_output::<_, $ty>(&mut __fut);
 
         let sig = std::any::type_name::<fn() -> std::task::Poll<$ty>>();
         (std::pin::pin!(__fut), sig)
@@ -234,7 +240,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -249,7 +255,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns (no times).
     (
@@ -258,7 +264,7 @@ macro_rules! fake {
         assign: { $($assign:tt)* },
         returns: $ret_val:expr
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if $cond {
                  { $($assign)* }
@@ -269,7 +275,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times, but no assign.
     (
@@ -280,7 +286,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -294,7 +300,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns (no times, no assign).
     (
@@ -302,7 +308,7 @@ macro_rules! fake {
         when: $cond:expr,
         returns: $ret_val:expr
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if $cond {
                  $ret_val
@@ -312,14 +318,14 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     (
         func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
         when: $cond:expr,
         returns: $ret_val:expr
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
              if $cond {
                  $ret_val
@@ -329,7 +335,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns and times
     (
@@ -340,7 +346,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -355,7 +361,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -363,7 +369,7 @@ macro_rules! fake {
         assign: { $($assign:tt)* },
         returns: $ret_val:expr
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if true {
                 { $($assign)* }
@@ -374,7 +380,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times and returns
     (
@@ -384,7 +390,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -398,14 +404,14 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns only.
     (
         func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
         returns: $ret_val:expr
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          fn fake($($arg_name: $arg_ty),*) -> $ret {
              if true {
                  $ret_val
@@ -415,13 +421,13 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     (
         func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
         returns: $ret_val:expr
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
              if true {
                  $ret_val
@@ -431,7 +437,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === UNIT RETURNING FUNCTIONS (-> ()) ===
@@ -445,7 +451,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -457,9 +463,9 @@ macro_rules! fake {
                  panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
-         let f: fn($($arg_ty),*) -> $ret = fake;
+         let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -469,7 +475,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) {
              if $cond {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -480,9 +486,9 @@ macro_rules! fake {
                  panic!("Fake function defined at {}:{}:{} called with unexpected arguments", file!(), line!(), column!());
              }
          }
-         let f: fn($($arg_ty),*) -> $ret = fake;
+         let f: fn($($arg_ty),*) -> () = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -490,7 +496,7 @@ macro_rules! fake {
         when: $cond:expr,
         assign: { $($assign:tt)* }
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          fn fake($($arg_name: $arg_ty),*) {
              if $cond {
                  { $($assign)* }
@@ -500,14 +506,14 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
         func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> (),
         assign: { $($assign:tt)* }
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          fn fake($($arg_name: $arg_ty),*) {
              if true {
                  { $($assign)* }
@@ -517,7 +523,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -528,7 +534,7 @@ macro_rules! fake {
 
         use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -542,7 +548,7 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -551,7 +557,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          fn fake($($arg_name: $arg_ty),*) {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -564,19 +570,19 @@ macro_rules! fake {
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
         func_type: fn($($arg_name:ident: $arg_ty:ty),*) -> ()
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          fn fake($($arg_name: $arg_ty),*) {
              if true { } else { unreachable!() }
          }
          let f: fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === NORMAL UNSAFE NON-UNIT RETURNING FUNCTIONS ===
@@ -585,7 +591,7 @@ macro_rules! fake {
         func_type: unsafe fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
         returns: $ret_val:expr
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 $ret_val
@@ -595,7 +601,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns and times for unsafe fn
     (
@@ -605,7 +611,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -619,7 +625,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns for unsafe fn
     (
@@ -627,7 +633,7 @@ macro_rules! fake {
         assign: { $($assign:tt)* },
         returns: $ret_val:expr
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 { $($assign)* }
@@ -638,7 +644,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns, and times for unsafe fn
     (
@@ -649,7 +655,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -664,7 +670,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === NORMAL UNSAFE UNIT RETURNING FUNCTIONS ===
     // With times for unsafe fn
@@ -674,7 +680,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe fn fake($($arg_name: $arg_ty),*) {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -687,14 +693,14 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
         func_type: unsafe fn($($arg_name:ident: $arg_ty:ty),*) -> (),
         assign: { $($assign:tt)* }
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe fn fake($($arg_name: $arg_ty),*) {
             if true {
                 { $($assign)* }
@@ -704,7 +710,7 @@ macro_rules! fake {
         }
         let f: unsafe fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -715,7 +721,7 @@ macro_rules! fake {
 
         use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          unsafe fn fake($($arg_name: $arg_ty),*) {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -729,19 +735,19 @@ macro_rules! fake {
          }
          let f: unsafe fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // Without times for unsafe fn
     (
         func_type: unsafe fn($($arg_name:ident: $arg_ty:ty),*) -> ()
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe fn fake($($arg_name: $arg_ty),*) {
             if true { } else { unreachable!() }
         }
         let f: unsafe fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 
     // === EXTERN "C" NON-UNIT RETURNING FUNCTIONS ===
@@ -755,7 +761,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -770,7 +776,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns
     (
@@ -779,7 +785,7 @@ macro_rules! fake {
         assign: { $($assign:tt)* },
         returns: $ret_val:expr
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if $cond {
                 { $($assign)* }
@@ -790,7 +796,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times
     (
@@ -801,7 +807,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -815,7 +821,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns, and times
     (
@@ -826,7 +832,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -841,7 +847,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -849,7 +855,7 @@ macro_rules! fake {
         assign: { $($assign:tt)* },
         returns: $ret_val:expr
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 { $($assign)* }
@@ -860,7 +866,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns and times
     (
@@ -870,7 +876,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -884,7 +890,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === EXTERN "C" UNIT RETURNING FUNCTIONS ===
     // With when, assign, and times
@@ -896,7 +902,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -910,7 +916,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -920,7 +926,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -933,7 +939,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -941,7 +947,7 @@ macro_rules! fake {
         when: $cond:expr,
         assign: { $($assign:tt)* }
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) {
             if $cond {
                 { $($assign)* }
@@ -951,14 +957,14 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
         func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
         assign: { $($assign:tt)* }
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "C" fn fake($($arg_name: $arg_ty),*) {
             if true {
                 { $($assign)* }
@@ -968,7 +974,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "C" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -979,7 +985,7 @@ macro_rules! fake {
 
         use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          unsafe extern "C" fn fake($($arg_name: $arg_ty),*) {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -993,7 +999,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -1002,7 +1008,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          unsafe extern "C" fn fake($($arg_name: $arg_ty),*) {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1015,19 +1021,19 @@ macro_rules! fake {
          }
          let f: unsafe extern "C" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
         func_type: unsafe extern "C" fn($($arg_name:ident: $arg_ty:ty),*) -> ()
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          unsafe extern "C" fn fake($($arg_name: $arg_ty),*) {
              if true { } else { unreachable!() }
          }
          let f: unsafe extern "C" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === EXTERN "system" NON-UNIT RETURNING FUNCTIONS ===
     // With when, assign, returns, and times.
@@ -1040,7 +1046,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1055,7 +1061,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when, assign, and returns
     (
@@ -1064,7 +1070,7 @@ macro_rules! fake {
         assign: { $($assign:tt)* },
         returns: $ret_val:expr
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if $cond {
                 { $($assign)* }
@@ -1075,7 +1081,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and returns, times
     (
@@ -1086,7 +1092,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1100,7 +1106,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign, returns, and times
     (
@@ -1111,7 +1117,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1126,7 +1132,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and returns
     (
@@ -1134,7 +1140,7 @@ macro_rules! fake {
         assign: { $($assign:tt)* },
         returns: $ret_val:expr
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 { $($assign)* }
@@ -1145,7 +1151,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With returns and times
     (
@@ -1155,7 +1161,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
             if true {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1169,13 +1175,13 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     (
         func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> $ret:ty,
         returns: $ret_val:expr
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          unsafe extern "system" fn fake($($arg_name: $arg_ty),*) -> $ret {
              if true {
                  $ret_val
@@ -1185,7 +1191,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "system" fn($($arg_ty),*) -> $ret = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // === EXTERN "system" UNIT RETURNING FUNCTIONS ===
     // With when, assign, and times
@@ -1197,7 +1203,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1211,7 +1217,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and times (no assign).
     (
@@ -1221,7 +1227,7 @@ macro_rules! fake {
     ) => {{
         use std::sync::atomic::{AtomicUsize, Ordering};
         static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-        let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+        let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) {
             if $cond {
                 let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1234,7 +1240,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With when and assign (no times).
     (
@@ -1242,7 +1248,7 @@ macro_rules! fake {
         when: $cond:expr,
         assign: { $($assign:tt)* }
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) {
             if $cond {
                 { $($assign)* }
@@ -1252,14 +1258,14 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign only
     (
         func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> (),
         assign: { $($assign:tt)* }
     ) => {{
-        let verifier = CallCountVerifier::Dummy;
+        let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
         unsafe extern "system" fn fake($($arg_name: $arg_ty),*) {
             if true {
                 { $($assign)* }
@@ -1269,7 +1275,7 @@ macro_rules! fake {
         }
         let f: unsafe extern "system" fn($($arg_ty),*) = fake;
         let raw_ptr = f as *const ();
-        (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+        (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With assign and times
     (
@@ -1280,7 +1286,7 @@ macro_rules! fake {
 
         use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          unsafe extern "system" fn fake($($arg_name: $arg_ty),*) {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1294,7 +1300,7 @@ macro_rules! fake {
          }
          let f: unsafe extern "system" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With times only (when defaults to true, no assign).
     (
@@ -1303,7 +1309,7 @@ macro_rules! fake {
     ) => {{
          use std::sync::atomic::{AtomicUsize, Ordering};
          static FAKE_COUNTER: AtomicUsize = AtomicUsize::new(0);
-         let verifier = CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
+         let verifier = $crate::interface::injector::CallCountVerifier::WithCount { counter: &FAKE_COUNTER, expected: $expected };
          unsafe extern "system" fn fake($($arg_name: $arg_ty),*) {
              if true {
                  let prev = FAKE_COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -1316,19 +1322,19 @@ macro_rules! fake {
          }
          let f: unsafe extern "system" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
     // With neither (no when, no times, no assign, no returns).
     (
         func_type: unsafe extern "system" fn($($arg_name:ident: $arg_ty:ty),*) -> ()
     ) => {{
-         let verifier = CallCountVerifier::Dummy;
+         let verifier = $crate::interface::injector::CallCountVerifier::Dummy;
          unsafe extern "system" fn fake($($arg_name: $arg_ty),*) {
              if true { } else { unreachable!() }
          }
          let f: unsafe extern "system" fn($($arg_ty),*) = fake;
          let raw_ptr = f as *const ();
-         (unsafe { FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
+         (unsafe { $crate::interface::injector::FuncPtr::new(raw_ptr, std::any::type_name_of_val(&f)) }, verifier)
     }};
 }
 
