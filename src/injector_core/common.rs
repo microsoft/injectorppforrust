@@ -80,7 +80,10 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         #[cfg(target_os = "macos")]
         let max_range: u64 = 0x8000_0000; // ±2GB
 
-        #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64")))]
+        #[cfg(all(
+            target_os = "linux",
+            any(target_arch = "x86_64", target_arch = "aarch64")
+        ))]
         let max_range: u64 = 0x8000000; // ±128MB
 
         #[cfg(all(target_os = "linux", target_arch = "arm"))]
@@ -158,6 +161,7 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
         ptr as *mut u8
     }
 }
+
 // See https://github.com/microsoft/injectorppforrust/issues/84
 /// Allocate executable JIT memory on Windows platforms.
 ///
@@ -165,13 +169,20 @@ fn allocate_jit_memory_unix(_src: &FuncPtrInternal, code_size: usize) -> *mut u8
 /// For x86_64, memory must be within ±2GB for `jmp rel32` instructions.
 #[cfg(target_os = "windows")]
 fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut u8 {
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
+        #[cfg(target_arch = "aarch64")]
         let max_range: u64 = 0x8000000; // ±128MB
+
+        #[cfg(target_arch = "x86_64")]
+        let max_range: u64 = 0x8000_0000; // ±2GB
+
         let original_addr = _src.as_ptr() as u64;
         let page_size = unsafe { get_page_size() as u64 };
 
         // Search outward from the function address to find the CLOSEST free page.
+        // This avoids allocating far from the function (e.g., in/near stack memory),
+        // which could disrupt the stack guard page and cause STATUS_STACK_OVERFLOW.
         let mut offset: u64 = 0;
         while offset <= max_range {
             for &dir in &[1i64, -1i64] {
@@ -180,7 +191,7 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
                 } else if offset > 0 {
                     original_addr.checked_sub(offset)
                 } else {
-                    continue;
+                    continue; // Already tried offset=0 with dir=1
                 };
 
                 let Some(hint_addr) = hint else { continue };
@@ -208,41 +219,10 @@ fn allocate_jit_memory_windows(_src: &FuncPtrInternal, code_size: usize) -> *mut
             offset += page_size;
         }
 
-        panic!("Failed to allocate executable memory within ±128MB of original function address on AArch64 Windows");
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        let max_range: usize = 0x8000_0000; // ±2GB
-        let original_addr = _src.as_ptr() as usize;
-        let page_size = unsafe { get_page_size() };
-        let mut addr = original_addr.saturating_sub(max_range);
-
-        while addr <= original_addr + max_range {
-            let ptr = unsafe {
-                VirtualAlloc(
-                    addr as *mut c_void,
-                    code_size,
-                    MEM_COMMIT | MEM_RESERVE,
-                    PAGE_EXECUTE_READWRITE,
-                )
-            };
-
-            if !ptr.is_null() {
-                let allocated = ptr as usize;
-                if allocated.abs_diff(original_addr) <= max_range {
-                    return ptr as *mut u8;
-                } else {
-                    unsafe {
-                        VirtualFree(ptr, 0, MEM_RELEASE);
-                    }
-                }
-            }
-
-            addr += page_size;
-        }
-
-        panic!("Failed to allocate executable memory within ±2GB of original function address on x86_64 Windows");
+        panic!(
+            "Failed to allocate JIT memory within ±{max_range} bytes of source on {} arch",
+            std::env::consts::ARCH
+        );
     }
 
     #[cfg(all(not(target_arch = "x86_64"), not(target_arch = "aarch64")))]
@@ -494,5 +474,105 @@ unsafe fn clear_cache(start: *mut u8, end: *mut u8) {
     #[cfg(target_arch = "aarch64")]
     {
         core::arch::asm!("dsb sy", "isb", options(nostack, nomem));
+    }
+}
+
+#[cfg(test)]
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+mod tests {
+    use super::*;
+
+    /// A dummy function used as the "source" address for JIT allocation tests.
+    #[inline(never)]
+    fn dummy_target_function() -> i32 {
+        std::hint::black_box(42)
+    }
+
+    /// Verify that `allocate_jit_memory` returns an address close to the source function,
+    /// not at the far end of the ±2GB range where it could collide with the stack.
+    ///
+    /// The old x86_64 Windows implementation scanned linearly from `func_addr - 2GB`,
+    /// which could return memory near the stack guard pages. The fixed implementation
+    /// searches outward from the function address, so the result should be much closer.
+    #[test]
+    fn test_jit_allocation_is_close_to_source() {
+        let func_ptr = unsafe {
+            FuncPtrInternal::new(std::ptr::NonNull::new(dummy_target_function as *mut ()).unwrap())
+        };
+        let func_addr = func_ptr.as_ptr() as u64;
+
+        let jit_ptr = allocate_jit_memory(&func_ptr, 256);
+        assert!(!jit_ptr.is_null(), "JIT allocation should succeed");
+
+        let jit_addr = jit_ptr as u64;
+        let distance = func_addr.abs_diff(jit_addr);
+
+        // The allocation should be relatively close — within 128MB.
+        // The old buggy code would often return addresses ~2GB away, near the stack.
+        let max_acceptable_distance: u64 = 128 * 1024 * 1024; // 128MB
+        assert!(
+            distance <= max_acceptable_distance,
+            "JIT memory should be allocated close to the function. \
+             Function at {func_addr:#x}, JIT at {jit_addr:#x}, distance: {distance} bytes ({} MB). \
+             Expected within {max_acceptable_distance} bytes ({} MB).",
+            distance / (1024 * 1024),
+            max_acceptable_distance / (1024 * 1024),
+        );
+
+        // Clean up
+        unsafe {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            {
+                libc::munmap(jit_ptr as *mut c_void, 256);
+            }
+            #[cfg(target_os = "windows")]
+            {
+                VirtualFree(jit_ptr as *mut c_void, 0, MEM_RELEASE);
+            }
+        }
+    }
+
+    /// Verify that JIT allocation does NOT land in the current thread's stack region.
+    /// This directly tests the root cause of the STATUS_STACK_OVERFLOW crash: the old
+    /// algorithm could allocate JIT memory in/near the stack, disrupting the guard page.
+    #[test]
+    fn test_jit_allocation_not_in_stack_region() {
+        let func_ptr = unsafe {
+            FuncPtrInternal::new(std::ptr::NonNull::new(dummy_target_function as *mut ()).unwrap())
+        };
+
+        // Use a stack local's address to approximate the stack location
+        let stack_local: u64 = 0;
+        let stack_addr = &stack_local as *const u64 as u64;
+
+        let jit_ptr = allocate_jit_memory(&func_ptr, 256);
+        assert!(!jit_ptr.is_null(), "JIT allocation should succeed");
+
+        let jit_addr = jit_ptr as u64;
+        // Stack on Windows x86_64 is typically 1-8MB. Use a conservative 16MB guard zone.
+        let stack_guard_zone: u64 = 16 * 1024 * 1024;
+        let distance_to_stack = jit_addr.abs_diff(stack_addr);
+
+        assert!(
+            distance_to_stack > stack_guard_zone,
+            "JIT memory should NOT be near the stack! \
+             JIT at {jit_addr:#x}, stack approx at {stack_addr:#x}, \
+             distance: {distance_to_stack} bytes ({} MB). \
+             Must be > {stack_guard_zone} bytes ({} MB) from stack.",
+            distance_to_stack / (1024 * 1024),
+            stack_guard_zone / (1024 * 1024),
+        );
+
+        // Clean up
+        unsafe {
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            {
+                libc::munmap(jit_ptr as *mut c_void, 256);
+            }
+            #[cfg(target_os = "windows")]
+            {
+                VirtualFree(jit_ptr as *mut c_void, 0, MEM_RELEASE);
+            }
+        }
     }
 }

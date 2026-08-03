@@ -1,6 +1,6 @@
 [package]
 name = "injectorpp-macros"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Jingyu Ma <mazong1123us@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/microsoft/injectorppforrust"
