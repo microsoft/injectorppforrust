@@ -4,10 +4,10 @@ use super::patch_trait::PatchTrait;
 
 #[cfg(target_arch = "x86_64")]
 use super::patch_amd64::PatchAmd64;
-#[cfg(target_arch = "aarch64")]
-use super::patch_arm64::PatchArm64;
 #[cfg(target_arch = "arm")]
 use super::patch_arm::PatchArm;
+#[cfg(target_arch = "aarch64")]
+use super::patch_arm64::PatchArm64;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
 use super::thread_local_registry;
@@ -49,10 +49,7 @@ impl WhenCalled {
     /// The original function is patched to a dispatcher that routes calls
     /// to per-thread replacement functions.
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
-    pub(crate) fn will_execute_thread_local(
-        self,
-        target: FuncPtrInternal,
-    ) -> ThreadRegistration {
+    pub(crate) fn will_execute_thread_local(self, target: FuncPtrInternal) -> ThreadRegistration {
         let replacement_addr = target.as_ptr() as usize;
         thread_local_registry::register_replacement(&self.func_ptr, replacement_addr, None)
     }
@@ -64,8 +61,13 @@ impl WhenCalled {
         #[cfg(target_arch = "x86_64")]
         let (jit_size, asm_code_vec) = {
             let code: [u8; 8] = [
-                0x48, 0xC7, 0xC0, // mov rax, imm32
-                value as u8, 0x00, 0x00, 0x00, // imm32
+                0x48,
+                0xC7,
+                0xC0, // mov rax, imm32
+                value as u8,
+                0x00,
+                0x00,
+                0x00, // imm32
                 0xC3, // ret
             ];
             (8usize, code.to_vec())

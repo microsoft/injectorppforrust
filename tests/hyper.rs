@@ -36,8 +36,7 @@ fn make_tcp_with_http_response() -> std::io::Result<TcpStream> {
                 }
             }
 
-            let body =
-                r#"{"status": "ok", "message": "mock response", "headers": {"User-Agent": "hyper-test/1.0"}}"#;
+            let body = r#"{"status": "ok", "message": "mock response", "headers": {"User-Agent": "hyper-test/1.0"}}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\n\
                 Content-Type: application/json\r\n\

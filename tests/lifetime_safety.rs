@@ -14,18 +14,38 @@ use injectorpp::interface::injector::*;
 /// Helper: tries to compile a source file and returns whether it succeeded.
 /// Returns None if build artifacts can't be found (e.g. cross-compilation).
 fn try_compile(source_path: &str) -> Option<bool> {
-    let rlib = find_file(&["target/debug/deps", "target/debug"], "libinjectorpp", ".rlib")?;
-    let ext = if cfg!(windows) { ".dll" } else if cfg!(target_os = "macos") { ".dylib" } else { ".so" };
-    let proc_dylib = find_file(&["target/debug/deps", "target/debug"], "injectorpp_macros", ext)?;
+    let rlib = find_file(
+        &["target/debug/deps", "target/debug"],
+        "libinjectorpp",
+        ".rlib",
+    )?;
+    let ext = if cfg!(windows) {
+        ".dll"
+    } else if cfg!(target_os = "macos") {
+        ".dylib"
+    } else {
+        ".so"
+    };
+    let proc_dylib = find_file(
+        &["target/debug/deps", "target/debug"],
+        "injectorpp_macros",
+        ext,
+    )?;
 
     let output = std::process::Command::new("rustc")
         .args([
-            "--edition", "2021",
-            "--crate-type", "bin",
-            "-L", "target/debug/deps",
-            "--extern", &format!("injectorpp={}", rlib),
-            "--extern", &format!("injectorpp_macros={}", proc_dylib),
-            "-o", if cfg!(windows) { "NUL" } else { "/dev/null" },
+            "--edition",
+            "2021",
+            "--crate-type",
+            "bin",
+            "-L",
+            "target/debug/deps",
+            "--extern",
+            &format!("injectorpp={}", rlib),
+            "--extern",
+            &format!("injectorpp_macros={}", proc_dylib),
+            "-o",
+            if cfg!(windows) { "NUL" } else { "/dev/null" },
             source_path,
         ])
         .output()
@@ -50,7 +70,10 @@ fn find_file(dirs: &[&str], prefix: &str, suffix: &str) -> Option<String> {
 #[test]
 fn static_str_coerced_to_bare_ref_must_not_compile() {
     match try_compile("tests/compile_fail/static_str_coerced_to_bare_ref.rs") {
-        Some(compiled) => assert!(!compiled, "expected compile error: &'static str coerced to bare &str should be rejected"),
+        Some(compiled) => assert!(
+            !compiled,
+            "expected compile error: &'static str coerced to bare &str should be rejected"
+        ),
         None => eprintln!("skipped: build artifacts not found"),
     }
 }
@@ -58,7 +81,10 @@ fn static_str_coerced_to_bare_ref_must_not_compile() {
 #[test]
 fn static_slice_coerced_to_bare_ref_must_not_compile() {
     match try_compile("tests/compile_fail/static_slice_coerced_to_bare_ref.rs") {
-        Some(compiled) => assert!(!compiled, "expected compile error: &'static [u8] coerced to bare &[u8] should be rejected"),
+        Some(compiled) => assert!(
+            !compiled,
+            "expected compile error: &'static [u8] coerced to bare &[u8] should be rejected"
+        ),
         None => eprintln!("skipped: build artifacts not found"),
     }
 }
@@ -66,7 +92,10 @@ fn static_slice_coerced_to_bare_ref_must_not_compile() {
 #[test]
 fn func_info_prefix_lifetime_mismatch_must_not_compile() {
     match try_compile("tests/compile_fail/func_info_prefix_lifetime_mismatch.rs") {
-        Some(compiled) => assert!(!compiled, "expected compile error: lifetime mismatch with func_info: prefix should be rejected"),
+        Some(compiled) => assert!(
+            !compiled,
+            "expected compile error: lifetime mismatch with func_info: prefix should be rejected"
+        ),
         None => eprintln!("skipped: build artifacts not found"),
     }
 }

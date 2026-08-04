@@ -347,9 +347,10 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(unsafe {
-            FuncPtr::new(poll_fn as *const (), std::any::type_name_of_val(&poll_fn))
-        }.func_ptr_internal);
+        let when = WhenCalled::new(
+            unsafe { FuncPtr::new(poll_fn as *const (), std::any::type_name_of_val(&poll_fn)) }
+                .func_ptr_internal,
+        );
 
         let signature = fake_pair.1;
         WhenCalledBuilderAsync {
@@ -407,9 +408,10 @@ impl InjectorPP {
         F: Future<Output = T>,
     {
         let poll_fn: fn(Pin<&mut F>, &mut Context<'_>) -> Poll<T> = <F as Future>::poll;
-        let when = WhenCalled::new(unsafe {
-            FuncPtr::new(poll_fn as *const (), std::any::type_name_of_val(&poll_fn))
-        }.func_ptr_internal);
+        let when = WhenCalled::new(
+            unsafe { FuncPtr::new(poll_fn as *const (), std::any::type_name_of_val(&poll_fn)) }
+                .func_ptr_internal,
+        );
 
         WhenCalledBuilderAsync {
             lib: self,
@@ -506,16 +508,16 @@ impl WhenCalledBuilder<'_> {
                     self.expected_signature, target.signature
                 );
             }
-            (None, _) | (_, None) => {
+            (None, _) | (_, None)
                 if normalize_signature(target.signature)
-                    != normalize_signature(self.expected_signature)
-                {
-                    panic!(
-                        "Signature mismatch: expected {:?} but got {:?}",
-                        self.expected_signature, target.signature
-                    );
-                }
+                    != normalize_signature(self.expected_signature) =>
+            {
+                panic!(
+                    "Signature mismatch: expected {:?} but got {:?}",
+                    self.expected_signature, target.signature
+                );
             }
+
             _ => {}
         }
 
@@ -525,7 +527,9 @@ impl WhenCalledBuilder<'_> {
         } else {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
             {
-                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                let reg = self
+                    .when
+                    .will_execute_thread_local(target.func_ptr_internal);
                 self.lib.registrations.push(reg);
             }
 
@@ -597,7 +601,9 @@ impl WhenCalledBuilder<'_> {
         } else {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
             {
-                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                let reg = self
+                    .when
+                    .will_execute_thread_local(target.func_ptr_internal);
                 self.lib.registrations.push(reg);
             }
 
@@ -737,16 +743,16 @@ impl WhenCalledBuilderAsync<'_> {
                     self.expected_signature, target.signature
                 );
             }
-            (None, _) | (_, None) => {
+            (None, _) | (_, None)
                 if normalize_signature(target.signature)
-                    != normalize_signature(self.expected_signature)
-                {
-                    panic!(
-                        "Signature mismatch: expected {:?} but got {:?}",
-                        self.expected_signature, target.signature
-                    );
-                }
+                    != normalize_signature(self.expected_signature) =>
+            {
+                panic!(
+                    "Signature mismatch: expected {:?} but got {:?}",
+                    self.expected_signature, target.signature
+                );
             }
+
             _ => {}
         }
 
@@ -756,7 +762,9 @@ impl WhenCalledBuilderAsync<'_> {
         } else {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
             {
-                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                let reg = self
+                    .when
+                    .will_execute_thread_local(target.func_ptr_internal);
                 self.lib.registrations.push(reg);
             }
 
@@ -806,7 +814,9 @@ impl WhenCalledBuilderAsync<'_> {
         } else {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "arm"))]
             {
-                let reg = self.when.will_execute_thread_local(target.func_ptr_internal);
+                let reg = self
+                    .when
+                    .will_execute_thread_local(target.func_ptr_internal);
                 self.lib.registrations.push(reg);
             }
 
@@ -818,4 +828,3 @@ impl WhenCalledBuilderAsync<'_> {
         }
     }
 }
-

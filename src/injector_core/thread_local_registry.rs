@@ -166,10 +166,7 @@ pub(crate) extern "C" fn get_thread_target(method_key: usize, default_target: us
 /// Inactive entries (ref_count == 0) are skipped — their dispatchers are permanent
 /// but their patches can safely be overwritten since no thread routes through them.
 #[cfg(target_arch = "arm")]
-fn check_arm32_patch_overlap(
-    func_addr: *mut u8,
-    registry: &HashMap<usize, MethodEntry>,
-) {
+fn check_arm32_patch_overlap(func_addr: *mut u8, registry: &HashMap<usize, MethodEntry>) {
     let clean_addr = (func_addr as usize) & !1;
     let patch_size = 4; // minimum patch size on ARM32
 
@@ -364,8 +361,7 @@ fn install_dispatcher_aarch64(func_addr: *mut u8, method_key: usize) -> MethodEn
 
     // Step 4: Generate dispatcher code with the real trampoline address and write
     // to the pre-allocated buffer.
-    let dispatcher_code =
-        build_dispatcher_code_aarch64(method_key as u64, trampoline_addr as u64);
+    let dispatcher_code = build_dispatcher_code_aarch64(method_key as u64, trampoline_addr as u64);
     assert!(
         dispatcher_code.len() <= DISPATCHER_MAX_SIZE,
         "Dispatcher code ({} bytes) exceeds pre-allocated buffer ({} bytes)",
@@ -442,17 +438,17 @@ fn build_dispatcher_code_aarch64(method_key_val: u64, trampoline_val: u64) -> Ve
     emit_sub_sp_imm(&mut code, 224);
 
     // Save integer registers: x0-x7, x8, x30
-    emit_stp_x(&mut code, 0, 1, 0);     // stp x0, x1, [sp, #0]
-    emit_stp_x(&mut code, 2, 3, 16);    // stp x2, x3, [sp, #16]
-    emit_stp_x(&mut code, 4, 5, 32);    // stp x4, x5, [sp, #32]
-    emit_stp_x(&mut code, 6, 7, 48);    // stp x6, x7, [sp, #48]
-    emit_stp_x(&mut code, 8, 30, 64);   // stp x8, x30, [sp, #64]
+    emit_stp_x(&mut code, 0, 1, 0); // stp x0, x1, [sp, #0]
+    emit_stp_x(&mut code, 2, 3, 16); // stp x2, x3, [sp, #16]
+    emit_stp_x(&mut code, 4, 5, 32); // stp x4, x5, [sp, #32]
+    emit_stp_x(&mut code, 6, 7, 48); // stp x6, x7, [sp, #48]
+    emit_stp_x(&mut code, 8, 30, 64); // stp x8, x30, [sp, #64]
 
     // Save SIMD/FP registers: q0-q7
-    emit_stp_q(&mut code, 0, 1, 80);    // stp q0, q1, [sp, #80]
-    emit_stp_q(&mut code, 2, 3, 112);   // stp q2, q3, [sp, #112]
-    emit_stp_q(&mut code, 4, 5, 144);   // stp q4, q5, [sp, #144]
-    emit_stp_q(&mut code, 6, 7, 176);   // stp q6, q7, [sp, #176]
+    emit_stp_q(&mut code, 0, 1, 80); // stp q0, q1, [sp, #80]
+    emit_stp_q(&mut code, 2, 3, 112); // stp q2, q3, [sp, #112]
+    emit_stp_q(&mut code, 4, 5, 144); // stp q4, q5, [sp, #144]
+    emit_stp_q(&mut code, 6, 7, 176); // stp q6, q7, [sp, #176]
 
     // Load arguments for get_thread_target(method_key, trampoline_addr)
     // x0 = method_key, x1 = trampoline_addr
@@ -496,10 +492,7 @@ fn build_dispatcher_code_aarch64(method_key_val: u64, trampoline_val: u64) -> Ve
 /// PC-relative instructions (ADRP, ADR, B/BL, LDR literal, etc.) are adjusted to
 /// account for the trampoline's different address.
 #[cfg(target_arch = "aarch64")]
-fn create_trampoline_aarch64(
-    func_addr: *mut u8,
-    copy_size: usize,
-) -> (*mut u8, usize) {
+fn create_trampoline_aarch64(func_addr: *mut u8, copy_size: usize) -> (*mut u8, usize) {
     // The jump-back uses MOVZ + MOVK×3 + BR = 20 bytes (5 instructions)
     let jump_back_size = 20;
     let trampoline_total = copy_size + jump_back_size;
@@ -595,7 +588,12 @@ fn fixup_aarch64_pc_relative_buf(
 
     for i in 0..num_insns {
         let offset = i * 4;
-        let insn = u32::from_le_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]]);
+        let insn = u32::from_le_bytes([
+            buf[offset],
+            buf[offset + 1],
+            buf[offset + 2],
+            buf[offset + 3],
+        ]);
 
         let orig_pc = original_addr as i64 + (i as i64) * 4;
         let tramp_pc = trampoline_addr as i64 + (i as i64) * 4;
@@ -632,9 +630,8 @@ fn fixup_aarch64_pc_relative_buf(
                 let new_u = (new_imm21 as u32) & 0x1FFFFF;
                 let new_immhi = (new_u >> 2) & 0x7FFFF;
                 let new_immlo = new_u & 0x3;
-                let new_insn = (insn & !(0x7FFFF << 5) & !(0x3 << 29))
-                    | (new_immhi << 5)
-                    | (new_immlo << 29);
+                let new_insn =
+                    (insn & !(0x7FFFF << 5) & !(0x3 << 29)) | (new_immhi << 5) | (new_immlo << 29);
                 buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
             } else {
                 buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
@@ -652,8 +649,7 @@ fn fixup_aarch64_pc_relative_buf(
             };
             let new_imm26 = (imm26_signed as i64) + delta_insns;
             if new_imm26 >= -(1 << 25) && new_imm26 < (1 << 25) {
-                let new_insn =
-                    (insn & 0xFC000000) | ((new_imm26 as u32) & 0x03FFFFFF);
+                let new_insn = (insn & 0xFC000000) | ((new_imm26 as u32) & 0x03FFFFFF);
                 buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
             } else {
                 buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
@@ -674,8 +670,7 @@ fn fixup_aarch64_pc_relative_buf(
             };
             let new_imm19 = (imm19_signed as i64) + delta_insns;
             if new_imm19 >= -(1 << 18) && new_imm19 < (1 << 18) {
-                let new_insn =
-                    (insn & !(0x7FFFF << 5)) | (((new_imm19 as u32) & 0x7FFFF) << 5);
+                let new_insn = (insn & !(0x7FFFF << 5)) | (((new_imm19 as u32) & 0x7FFFF) << 5);
                 buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
             } else {
                 buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
@@ -693,8 +688,7 @@ fn fixup_aarch64_pc_relative_buf(
             };
             let new_imm14 = (imm14_signed as i64) + delta_insns;
             if new_imm14 >= -(1 << 13) && new_imm14 < (1 << 13) {
-                let new_insn =
-                    (insn & !(0x3FFF << 5)) | (((new_imm14 as u32) & 0x3FFF) << 5);
+                let new_insn = (insn & !(0x3FFF << 5)) | (((new_imm14 as u32) & 0x3FFF) << 5);
                 buf[offset..offset + 4].copy_from_slice(&new_insn.to_le_bytes());
             } else {
                 buf[offset..offset + 4].copy_from_slice(&nop.to_le_bytes());
@@ -808,9 +802,7 @@ fn emit_mov_reg(code: &mut Vec<u8>, rd: u8, rn: u8) {
 #[cfg(target_arch = "arm")]
 fn calculate_thumb_copy_size(func_addr: *mut u8, min_bytes: usize) -> usize {
     // Check if the function starts with BX LR (0x4770) — a 2-byte function
-    let first_hw = unsafe {
-        u16::from_le_bytes([func_addr.read(), func_addr.add(1).read()])
-    };
+    let first_hw = unsafe { u16::from_le_bytes([func_addr.read(), func_addr.add(1).read()]) };
     if first_hw == 0x4770 && min_bytes > 2 {
         panic!(
             "injectorpp: Function at {:#x} is only 2 bytes (BX LR), too small for \
@@ -845,8 +837,9 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
     // Clear the Thumb bit for actual memory operations
     let func_addr_clean = (func_addr as usize & !1) as *mut u8;
 
-    let near_src =
-        unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(func_addr_clean as *mut ()).unwrap()) };
+    let near_src = unsafe {
+        FuncPtrInternal::new(std::ptr::NonNull::new(func_addr_clean as *mut ()).unwrap())
+    };
 
     // Step 1: Pre-allocate dispatcher buffer to determine its address.
     // 64 bytes fits an optional 12-byte Thumb stub + 52-byte ARM dispatcher.
@@ -857,7 +850,11 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
     // Step 2: Determine patch size based on distance to dispatcher.
     // B.W (Thumb) has ±16MB range, B (ARM) has ±32MB range.
     let distance = dispatcher_addr.abs_diff(func_addr_clean as usize);
-    let max_b_range = if is_thumb { 16 * 1024 * 1024 } else { 32 * 1024 * 1024 };
+    let max_b_range = if is_thumb {
+        16 * 1024 * 1024
+    } else {
+        32 * 1024 * 1024
+    };
     let patch_size = if distance < max_b_range { 4 } else { 12 };
 
     // Step 3: Calculate the trampoline copy size. For Thumb, we must copy
@@ -877,7 +874,8 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
     // For Thumb functions with a 4-byte patch, a Thumb-mode stub at the start
     // of the JIT buffer transitions to the ARM-mode dispatcher, because Thumb
     // B.W cannot switch processor mode.
-    let arm_dispatcher_code = build_dispatcher_code_arm32(method_key as u32, trampoline_addr as u32);
+    let arm_dispatcher_code =
+        build_dispatcher_code_arm32(method_key as u32, trampoline_addr as u32);
 
     if is_thumb && patch_size == 4 {
         let arm_code_addr = (dispatcher_addr + 12) as u32;
@@ -888,17 +886,24 @@ fn install_dispatcher_arm32(func_addr: *mut u8, method_key: usize) -> MethodEntr
         let mut full_code = Vec::with_capacity(total_size);
         full_code.extend_from_slice(&stub);
         full_code.extend_from_slice(&arm_dispatcher_code);
-        unsafe { inject_asm_code(&full_code, dispatcher); }
+        unsafe {
+            inject_asm_code(&full_code, dispatcher);
+        }
     } else {
         assert!(arm_dispatcher_code.len() <= dispatcher_max_size);
-        unsafe { inject_asm_code(&arm_dispatcher_code, dispatcher); }
+        unsafe {
+            inject_asm_code(&arm_dispatcher_code, dispatcher);
+        }
     }
 
     // Step 5: Generate branch patch.
     // 4-byte Thumb B.W → Thumb stub at offset 0; 4-byte ARM B → dispatcher at offset 0.
     // 12-byte patches encode the dispatcher address directly.
     let patch = generate_branch_patch_arm32(
-        func_addr_clean as usize, dispatcher_addr, is_thumb, patch_size,
+        func_addr_clean as usize,
+        dispatcher_addr,
+        is_thumb,
+        patch_size,
     );
 
     // Read original bytes before patching
@@ -1072,8 +1077,12 @@ fn fixup_arm32_pc_relative(
 
     for i in 0..num_insns {
         let offset = i * 4;
-        let insn =
-            u32::from_le_bytes([buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]]);
+        let insn = u32::from_le_bytes([
+            buf[offset],
+            buf[offset + 1],
+            buf[offset + 2],
+            buf[offset + 3],
+        ]);
 
         let orig_pc = original_addr as i64 + (i as i64) * 4 + 8; // ARM: PC = instruction + 8
         let tramp_pc = trampoline_addr as i64 + (i as i64) * 4 + 8;
@@ -1255,7 +1264,8 @@ fn generate_dispatcher_jit(
     #[cfg(not(target_os = "windows"))]
     let code = generate_dispatcher_sysv(method_key, trampoline_addr, fn_addr);
 
-    let near_src = unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(near_addr as *mut ()).unwrap()) };
+    let near_src =
+        unsafe { FuncPtrInternal::new(std::ptr::NonNull::new(near_addr as *mut ()).unwrap()) };
     let jit_size = code.len();
     let jit_mem = allocate_jit_memory(&near_src, jit_size);
 
@@ -1335,11 +1345,7 @@ fn generate_dispatcher_windows(
 /// Integer args: rdi, rsi, rdx, rcx, r8, r9. Float args: xmm0-xmm7.
 #[cfg(target_arch = "x86_64")]
 #[cfg(not(target_os = "windows"))]
-fn generate_dispatcher_sysv(
-    method_key: usize,
-    trampoline_addr: usize,
-    fn_addr: usize,
-) -> Vec<u8> {
+fn generate_dispatcher_sysv(method_key: usize, trampoline_addr: usize, fn_addr: usize) -> Vec<u8> {
     let mut code: Vec<u8> = Vec::with_capacity(200);
 
     // Save integer argument registers (6 registers)
@@ -1484,11 +1490,7 @@ fn create_trampoline(func_addr: *mut u8, _method_key: usize) -> (*mut u8, usize,
         *jmp_ptr.add(4) = 0x00;
         *jmp_ptr.add(5) = 0x00;
         // 8-byte absolute target address
-        std::ptr::copy_nonoverlapping(
-            jump_back_addr.to_le_bytes().as_ptr(),
-            jmp_ptr.add(6),
-            8,
-        );
+        std::ptr::copy_nonoverlapping(jump_back_addr.to_le_bytes().as_ptr(), jmp_ptr.add(6), 8);
 
         // Flush instruction cache for the trampoline
         clear_cache_ptr(trampoline, trampoline_total);
@@ -1569,10 +1571,8 @@ fn fixup_rip_relative_instructions(
                     } else {
                         // Overflow: emit an indirect stub and redirect the CALL/JMP.
                         // Calculate the absolute target address from the original code.
-                        let rip_after_insn =
-                            func_addr as usize + offset + insn_len;
-                        let absolute_target =
-                            (rip_after_insn as i64 + old_rel as i64) as u64;
+                        let rip_after_insn = func_addr as usize + offset + insn_len;
+                        let absolute_target = (rip_after_insn as i64 + old_rel as i64) as u64;
 
                         assert!(
                             stub_cursor + 12 <= trampoline_alloc_size,
@@ -1659,18 +1659,30 @@ fn find_rip_relative_disp_offset(insn: &[u8], _insn_len: usize) -> Option<usize>
         // Single-byte opcodes: check if they have a ModR/M byte
         match opcode {
             // Opcodes that do NOT have ModR/M — skip
-            0x50..=0x5F | 0x90 | 0xC3 | 0xCC | 0xCB | 0xC9 | 0xF4 | 0xF5 | 0xF8 | 0xF9
-            | 0xFC | 0xFD | 0x99 | 0x9E | 0x9F => return None,
-            0x6A | 0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C | 0xCD | 0xEB
-            | 0xA8 => return None,
-            0x70..=0x7F => return None, // Jcc rel8
-            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D | 0x68 | 0xA9 => {
+            0x50..=0x5F
+            | 0x90
+            | 0xC3
+            | 0xCC
+            | 0xCB
+            | 0xC9
+            | 0xF4
+            | 0xF5
+            | 0xF8
+            | 0xF9
+            | 0xFC
+            | 0xFD
+            | 0x99
+            | 0x9E
+            | 0x9F => return None,
+            0x6A | 0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C | 0xCD | 0xEB | 0xA8 => {
                 return None
             }
+            0x70..=0x7F => return None, // Jcc rel8
+            0x05 | 0x0D | 0x15 | 0x1D | 0x25 | 0x2D | 0x35 | 0x3D | 0x68 | 0xA9 => return None,
             0xE8 | 0xE9 | 0xE3 => return None, // call/jmp rel32, JRCXZ
-            0xA0..=0xA3 => return None,         // MOV AL/AX moffs
-            0xB0..=0xBF => return None,         // MOV reg, imm
-            0xC2 => return None,                // RET imm16
+            0xA0..=0xA3 => return None,        // MOV AL/AX moffs
+            0xB0..=0xBF => return None,        // MOV reg, imm
+            0xC2 => return None,               // RET imm16
             _ => {
                 // Assume has ModR/M — fall through
             }
@@ -1701,9 +1713,7 @@ fn skip_prefixes(code: &[u8]) -> usize {
     // Skip legacy prefixes
     while pos < code.len() {
         match code[pos] {
-            0x66 | 0x67 | 0xF0 | 0xF2 | 0xF3 | 0x26 | 0x2E | 0x36 | 0x3E | 0x64 | 0x65 => {
-                pos += 1
-            }
+            0x66 | 0x67 | 0xF0 | 0xF2 | 0xF3 | 0x26 | 0x2E | 0x36 | 0x3E | 0x64 | 0x65 => pos += 1,
             _ => break,
         }
     }
@@ -1746,9 +1756,7 @@ fn x86_64_insn_len(code: &[u8]) -> usize {
     // Skip legacy prefixes
     while pos < code.len() {
         match code[pos] {
-            0x66 | 0x67 | 0xF0 | 0xF2 | 0xF3 | 0x26 | 0x2E | 0x36 | 0x3E | 0x64 | 0x65 => {
-                pos += 1
-            }
+            0x66 | 0x67 | 0xF0 | 0xF2 | 0xF3 | 0x26 | 0x2E | 0x36 | 0x3E | 0x64 | 0x65 => pos += 1,
             _ => break,
         }
     }
@@ -1775,8 +1783,20 @@ fn x86_64_insn_len(code: &[u8]) -> usize {
 
     match opcode {
         // Single byte, no operands
-        0x50..=0x5F | 0x90 | 0xC3 | 0xCC | 0x99 | 0x9E | 0x9F | 0xCB | 0xF4 | 0xF5 | 0xF8
-        | 0xF9 | 0xFC | 0xFD => pos,
+        0x50..=0x5F
+        | 0x90
+        | 0xC3
+        | 0xCC
+        | 0x99
+        | 0x9E
+        | 0x9F
+        | 0xCB
+        | 0xF4
+        | 0xF5
+        | 0xF8
+        | 0xF9
+        | 0xFC
+        | 0xFD => pos,
 
         // imm8 operand
         0x6A | 0x04 | 0x0C | 0x14 | 0x1C | 0x24 | 0x2C | 0x34 | 0x3C | 0xCD | 0xEB | 0xA8 => {

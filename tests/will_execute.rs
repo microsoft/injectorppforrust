@@ -160,7 +160,8 @@ fn test_will_execute_when_fake_no_return_function_over_called_should_panic() {
 
     let message = result.unwrap_err();
     let message_str = message
-        .downcast_ref::<&str>().copied()
+        .downcast_ref::<&str>()
+        .copied()
         .or_else(|| message.downcast_ref::<String>().map(|s| s.as_str()))
         .unwrap();
 

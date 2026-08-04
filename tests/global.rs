@@ -86,7 +86,10 @@ fn test_global_fake_closure_cross_thread() {
     let mut injector = InjectorPP::new_global();
     injector
         .when_called(injectorpp::func!(fn (global_multiply)(i32, i32) -> i32))
-        .will_execute_raw(injectorpp::closure!(|_a: i32, _b: i32| -> i32 { 777 }, fn(i32, i32) -> i32));
+        .will_execute_raw(injectorpp::closure!(
+            |_a: i32, _b: i32| -> i32 { 777 },
+            fn(i32, i32) -> i32
+        ));
 
     assert_eq!(global_multiply(3, 4), 777);
 
@@ -193,7 +196,10 @@ fn test_thread_local_mode_not_visible_from_spawned_thread() {
     let mut injector = InjectorPP::new();
     injector
         .when_called(injectorpp::func!(fn (global_add)(i32, i32) -> i32))
-        .will_execute_raw(injectorpp::closure!(|_a: i32, _b: i32| -> i32 { 9999 }, fn(i32, i32) -> i32));
+        .will_execute_raw(injectorpp::closure!(
+            |_a: i32, _b: i32| -> i32 { 9999 },
+            fn(i32, i32) -> i32
+        ));
 
     // Test thread sees the fake
     assert_eq!(global_add(1, 2), 9999);

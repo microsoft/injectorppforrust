@@ -859,7 +859,10 @@ fn test_string_return_thread_isolation() {
         let mut injector = InjectorPP::new();
         injector
             .when_called(injectorpp::func!(fn(get_greeting)() -> String))
-            .will_execute_raw(injectorpp::closure!(|| { "from_thread_1".to_string() }, fn() -> String));
+            .will_execute_raw(injectorpp::closure!(
+                || { "from_thread_1".to_string() },
+                fn() -> String
+            ));
         b1.wait();
         if get_greeting() != "from_thread_1" {
             e1.fetch_add(1, Ordering::SeqCst);
@@ -873,7 +876,10 @@ fn test_string_return_thread_isolation() {
         let mut injector = InjectorPP::new();
         injector
             .when_called(injectorpp::func!(fn(get_greeting)() -> String))
-            .will_execute_raw(injectorpp::closure!(|| { "from_thread_2".to_string() }, fn() -> String));
+            .will_execute_raw(injectorpp::closure!(
+                || { "from_thread_2".to_string() },
+                fn() -> String
+            ));
         b2.wait();
         if get_greeting() != "from_thread_2" {
             e2.fetch_add(1, Ordering::SeqCst);
