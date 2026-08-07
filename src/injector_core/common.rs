@@ -333,7 +333,7 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
     let mut remap: mach_vm_address_t = std::mem::zeroed();
     let mut cur: vm_prot_t = std::mem::zeroed();
     let mut max: vm_prot_t = std::mem::zeroed();
-    mach_vm_remap(
+    let mut result = mach_vm_remap(
         mach_task_self(),
         &mut remap,
         patch.len() as u64,
@@ -347,13 +347,21 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
         VM_INHERIT_NONE,
     );
 
-    mach_vm_protect(
+    if result != KERN_SUCCESS {
+        panic!("mach_vm_remap in patch_function failed with {result}");
+    } 
+
+    result = mach_vm_protect(
         mach_task_self(),
         remap,
         0x8,
         0,
         VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY,
     );
+
+    if result != KERN_SUCCESS {
+        panic!("mach_vm_protect in patch_function failed with {result}");
+    }
 
     inject_asm_code(patch, remap as *mut u8);
 
