@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@a37ce9120846195fa4ece8f58b268e6043cb2f26 # v3.7.0
 
       # Linux deps + QEMU for ARM64
       - name: Install Linux packages
@@ -55,7 +55,7 @@ jobs:
 
       # Nightly + llvm-cov
       - name: Install Rust nightly
-        uses: actions-rs/toolchain@v1
+        uses: actions-rs/toolchain@16499b5e05bf2e26879000db0c1d13f7e13fa3af # v1.0.7
         with:
           toolchain: nightly
           override: true
@@ -80,7 +80,7 @@ jobs:
         run: mv target/llvm-cov/html target/coverage-${{ matrix.os }}-${{ matrix.target }}
 
       - name: Upload HTML coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: html-report-${{ matrix.os }}-${{ matrix.target }}
           path: target/coverage-${{ matrix.os }}-${{ matrix.target }}
