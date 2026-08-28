@@ -17,6 +17,11 @@ impl Drop for CallCountVerifier {
     fn drop(&mut self) {
         if let CallCountVerifier::WithCount { counter, expected } = self {
             let call_times = counter.load(Ordering::SeqCst);
+
+            // Because the counter is static, there's a possibility it might be reused in certain
+            // environments that don't know about injectorpp. Because of this, it is reset here.
+            counter.store(0, Ordering::SeqCst);
+
             if call_times != *expected {
                 // Avoid double panic
                 if std::thread::panicking() {
