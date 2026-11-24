@@ -14,11 +14,13 @@ jobs:
     name: Coverage on ${{ matrix.os }} / ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-          #- os: ubuntu-latest
+          # To re-enable aarch64 coverage, run natively on ubuntu-24.04-arm (as ci.yml does).
+          #- os: ubuntu-24.04-arm
           #  target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -27,26 +29,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Linux deps + QEMU for ARM64
+      # Linux deps
       - name: Install Linux packages
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm lcov qemu-user-static gcc-aarch64-linux-gnu binfmt-support
-
-      - name: Enable QEMU binfmt
-        if: runner.os == 'Linux'
-        run: sudo update-binfmts --enable qemu-aarch64
-
-      - name: Verify QEMU installation
-        if: runner.os == 'Linux'
-        run: |
-          qemu-aarch64-static --version
-          echo "QEMU for ARM64 is properly configured."
-
-      - name: Install cross
-        if: runner.os == 'Linux'
-        run: cargo install cross --locked
+          sudo apt-get install -y llvm lcov
 
       # Windows LLVM
       - name: Install LLVM on Windows
