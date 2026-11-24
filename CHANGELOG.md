@@ -1,7 +1,3 @@
-# 0.5.2 (Unreleased)
-
-- Fix a crash when the patched bytes at the start of a faked function cross a page boundary, which showed up as a bare SIGSEGV on Linux and an access violation on Windows. injectorpp now makes every page that the patch touches writable, and on macOS both `mach_vm_protect` calls now cover the whole patch.
-
 # 0.5.1 (March 27, 2026)
 
 - Add `InjectorPP::new_global()` constructor for cross-thread fake visibility.
