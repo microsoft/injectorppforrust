@@ -316,7 +316,7 @@ impl Drop for PatchGuard {
 /// The caller must ensure that `func` points to a valid, patchable code region.
 #[cfg(not(target_os = "macos"))]
 pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
-    make_memory_writable_and_executable(func);
+    make_memory_writable_and_executable(func, patch.len());
 
     inject_asm_code(patch, func);
 }
@@ -354,7 +354,7 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
     result = mach_vm_protect(
         mach_task_self(),
         remap,
-        0x8,
+        patch.len() as u64,
         0,
         VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY,
     );
@@ -370,7 +370,7 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
     mach_vm_protect(
         mach_task_self(),
         remap,
-        0x8,
+        patch.len() as u64,
         0,
         VM_PROT_READ | VM_PROT_EXECUTE,
     );
@@ -395,26 +395,28 @@ pub(crate) unsafe fn patch_function(func: *mut u8, patch: &[u8]) {
 // MacOS forces memory to be writable or executable but not both. So we don't need an
 // implementation for it.
 #[cfg(not(target_os = "macos"))]
-unsafe fn make_memory_writable_and_executable(func: *mut u8) {
+unsafe fn make_memory_writable_and_executable(func: *mut u8, len: usize) {
     #[cfg(target_os = "linux")]
     {
-        make_memory_writable_and_executable_linux(func);
+        make_memory_writable_and_executable_linux(func, len);
     }
 
     #[cfg(target_os = "windows")]
     {
-        make_memory_writable_and_executable_windows(func);
+        make_memory_writable_and_executable_windows(func, len);
     }
 }
 
 #[cfg(target_os = "linux")]
-unsafe fn make_memory_writable_and_executable_linux(func: *mut u8) {
+unsafe fn make_memory_writable_and_executable_linux(func: *mut u8, len: usize) {
     let page_size = sysconf(_SC_PAGESIZE) as usize;
     let addr = func as usize;
     let page_start = addr & !(page_size - 1);
+    // The patch continues into the next page when the function starts near the end of a page.
+    // mprotect changes every page that holds a byte of [page_start, addr + len).
     if libc::mprotect(
         page_start as *mut c_void,
-        page_size,
+        addr + len - page_start,
         PROT_READ | PROT_WRITE | PROT_EXEC,
     ) != 0
     {
@@ -423,16 +425,14 @@ unsafe fn make_memory_writable_and_executable_linux(func: *mut u8) {
 }
 
 #[cfg(target_os = "windows")]
-unsafe fn make_memory_writable_and_executable_windows(func: *const u8) {
-    let page_size = get_page_size();
-    let addr = func as usize;
-    let page_start = addr & !(page_size - 1);
-
+unsafe fn make_memory_writable_and_executable_windows(func: *const u8, len: usize) {
     let mut old_protect: u32 = 0;
 
+    // VirtualProtect changes every page that holds a byte of [func, func + len), which also
+    // covers a patch that continues into the next page.
     let result = VirtualProtect(
-        page_start as *mut c_void,
-        page_size,
+        func as *mut c_void,
+        len,
         PAGE_EXECUTE_READWRITE,
         &mut old_protect,
     );
