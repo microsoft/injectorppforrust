@@ -1,3 +1,9 @@
+# 0.5.2 (November 25, 2026)
+
+- Fix crashes when the patched bytes of a faked function cross a page boundary on Linux, Windows, and macOS (#139).
+- Fix `func!` support for generic functions with reference type parameters (issue #107).
+- Improve error reporting when macOS function patching fails in `mach_vm_remap` or `mach_vm_protect`.
+
 # 0.5.1 (March 27, 2026)
 
 - Add `InjectorPP::new_global()` constructor for cross-thread fake visibility.
