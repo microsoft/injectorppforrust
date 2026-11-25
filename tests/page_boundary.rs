@@ -12,7 +12,7 @@
 //!
 //! Each function is 16 bytes long, so the patch stays inside the function.
 #![cfg(all(
-    any(target_os = "linux", target_os = "windows"),
+    any(target_os = "linux", target_os = "windows", target_os = "macos"),
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 
@@ -30,6 +30,9 @@ const SECTION_ALIGNMENT: usize = 64 * 1024;
 // Windows uses 4 KB pages on x86_64 and aarch64, so 4 KB is a page boundary there.
 #[cfg(target_os = "windows")]
 const SECTION_ALIGNMENT: usize = 4 * 1024;
+// macOS uses 16 KB pages on aarch64 and 4 KB pages on x86_64, so 16 KB is a page boundary on both.
+#[cfg(target_os = "macos")]
+const SECTION_ALIGNMENT: usize = 16 * 1024;
 
 const ORIGINAL_VALUE: i32 = 42;
 const FAKE_VALUE: i32 = 7;
@@ -66,6 +69,7 @@ macro_rules! function_body {
 
 /// Defines a function that returns `ORIGINAL_VALUE` and starts `EDGE_OFFSET` bytes before a
 /// `SECTION_ALIGNMENT` boundary.
+#[cfg(not(target_os = "macos"))]
 macro_rules! page_edge_function {
     ($name:literal) => {
         core::arch::global_asm!(
@@ -74,6 +78,37 @@ macro_rules! page_edge_function {
             ".space {padding}",
             concat!(".globl ", $name),
             concat!($name, ":"),
+            function_body!(),
+            ".popsection",
+            alignment = const SECTION_ALIGNMENT,
+            padding = const SECTION_ALIGNMENT - EDGE_OFFSET,
+            value = const ORIGINAL_VALUE,
+        );
+    };
+}
+
+/// Defines a function that returns `ORIGINAL_VALUE` and starts `EDGE_OFFSET` bytes before a
+/// `SECTION_ALIGNMENT` boundary.
+///
+/// Mach-O needs three changes compared to ELF and COFF:
+/// - C symbol names start with an underscore.
+/// - Section names have at most 16 characters, so both functions share the `__page_edge`
+///   section.
+/// - The linker splits a section into atoms at each symbol, and `-dead_strip` can remove an
+///   atom that holds only padding, which moves the function to another address. The `_page`
+///   label starts an atom at the aligned address, and `.alt_entry` keeps the function inside
+///   that atom, so the padding stays in front of the function.
+#[cfg(target_os = "macos")]
+macro_rules! page_edge_function {
+    ($name:literal) => {
+        core::arch::global_asm!(
+            ".pushsection __TEXT,__page_edge,regular,pure_instructions",
+            ".balign {alignment}",
+            concat!("_", $name, "_page:"),
+            ".space {padding}",
+            concat!(".globl _", $name),
+            concat!(".alt_entry _", $name),
+            concat!("_", $name, ":"),
             function_body!(),
             ".popsection",
             alignment = const SECTION_ALIGNMENT,
@@ -92,7 +127,7 @@ extern "C" {
 }
 
 fn page_size() -> usize {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
     }
