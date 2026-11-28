@@ -168,7 +168,7 @@ pub fn func_checked(input: TokenStream) -> TokenStream {
                 let ptr = fn_val as *const ();
                 let sig = std::any::type_name_of_val(&fn_val);
                 let type_id = std::any::TypeId::of::<#fn_type>();
-                unsafe { FuncPtr::new_with_type_id(ptr, sig, type_id) }
+                unsafe { injectorpp::interface::injector::FuncPtr::new_with_type_id(ptr, sig, type_id) }
             }
         }
     };
